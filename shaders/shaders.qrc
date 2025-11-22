@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/shaders">
+        <file>voxel.vert</file>
+        <file>voxel.frag</file>
+    </qresource>
+</RCC>
