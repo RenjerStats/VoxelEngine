@@ -39,7 +39,7 @@ set(HEADERS
     include/rendering/ShaderProgram.h
     # UI
     include/ui/MainWindow.h
-    include/ui/GLWidget.h
+    include/ui/VoxelWindow.h
     include/ui/ControlPanel.h
 )
 
@@ -63,7 +63,7 @@ set(SOURCES
     src/rendering/ShaderProgram.cpp
     # UI
     src/ui/MainWindow.cpp
-    src/ui/GLWidget.cpp
+    src/ui/VoxelWindow.cpp
     src/ui/ControlPanel.cpp
 )
 

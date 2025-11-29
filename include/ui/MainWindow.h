@@ -2,7 +2,7 @@
 
 #include <QMainWindow>
 
-class GLWidget;
+class VoxelWindow;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -14,5 +14,5 @@ public:
 private:
     void setupUI();
 
-    GLWidget* m_glWidget;
+    VoxelWindow* voxelWindow;
 };
