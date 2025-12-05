@@ -23,6 +23,16 @@ public:
     // Метод для установки пути к файлу (используется для загрузки)
     void setScenePath(const QString& path) { scenePath = path; }
 
+
+    void setFOV(float val);
+    void setDistance(float val);
+    void setLightDirX(float z);
+    void setLightDirY(float y);
+    void setLightDirZ(float z);
+    void setCameraRotationX(float x);
+    void setCameraRotationY(float y);
+    void setCameraRotationZ(float z);
+
 protected:
     // Переопределение методов QOpenGLWindow
     void initializeGL() override;
@@ -32,15 +42,15 @@ protected:
 
 
 private:
+    void calculateCenterOfModel();
+
     // Графические объекты
     QOpenGLShaderProgram program;
     QOpenGLBuffer vbo;
     QOpenGLVertexArrayObject vao;
     QOpenGLTexture* paletteTexture = nullptr;
 
-    // Управление временем и анимацией
     QTimer* timer = nullptr;
-    float time;
 
     // Данные сцены
     std::vector<CudaVoxel> hostCudaVoxels;
@@ -48,4 +58,11 @@ private:
 
     // Путь к файлу сцены
     QString scenePath;
+
+    // --- Параметры рендеринга  ---
+    QVector3D sceneCenter = QVector3D(0, 0, 0); // Центр сцены
+    float distanceToModel;
+    float m_fov;
+    QVector3D m_lightDir;
+    QVector3D m_cameraRotation;
 };

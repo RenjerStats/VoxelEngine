@@ -4,13 +4,17 @@
 #include "core/Types.h"
 
 #include <QDebug>
+#include <QtMath>
 
 using namespace VoxIO;
 using namespace std;
 
 VoxelWindow::VoxelWindow(QWindow* parent)
     : QOpenGLWindow(NoPartialUpdate, parent)
-    , time(0.0f)
+    , m_fov(45.0f)
+    , m_lightDir(0.5f, 1.0f, 0.3f)
+    , m_cameraRotation(180, -45, 180)
+    , distanceToModel(100)
 {
     // Настройка формата OpenGL
     QSurfaceFormat format;
@@ -112,8 +116,10 @@ void VoxelWindow::loadScene() {
     if (scene->modelCount() > 0) {
         VoxModel model = scene->getModel(0);
         hostCudaVoxels = model.getCudaVoxels();
+        calculateCenterOfModel();
     } else {
         hostCudaVoxels.clear();
+        sceneCenter = QVector3D(0, 0, 0);
     }
 
     voxelCount = hostCudaVoxels.size();
@@ -132,7 +138,7 @@ void VoxelWindow::loadScene() {
     }
 
     // Создаём новую текстуру АВТОМАТИЧЕСКИ из QImage
-    paletteTexture = new QOpenGLTexture(palImage); // Всё в одном вызове!
+    paletteTexture = new QOpenGLTexture(palImage);
 
     // Настройки (ПОСЛЕ создания)
     paletteTexture->setMinificationFilter(QOpenGLTexture::Nearest);
@@ -143,9 +149,59 @@ void VoxelWindow::loadScene() {
     requestUpdate();
 }
 
+void VoxelWindow::calculateCenterOfModel()
+{
+    if (!hostCudaVoxels.empty()) {
+        float minX = std::numeric_limits<float>::max();
+        float minY = std::numeric_limits<float>::max();
+        float minZ = std::numeric_limits<float>::max();
+
+        float maxX = std::numeric_limits<float>::lowest();
+        float maxY = std::numeric_limits<float>::lowest();
+        float maxZ = std::numeric_limits<float>::lowest();
+
+        for (const auto& v : hostCudaVoxels) {
+            if (v.x < minX) minX = v.x;
+            if (v.y < minY) minY = v.y;
+            if (v.z < minZ) minZ = v.z;
+
+            if (v.x > maxX) maxX = v.x;
+            if (v.y > maxY) maxY = v.y;
+            if (v.z > maxZ) maxZ = v.z;
+        }
+
+        // Центр = середина между мин. и макс. границами
+        sceneCenter = QVector3D(
+            (minX + maxX) / 2.0f,
+            (minY + maxY) / 2.0f,
+            (minZ + maxZ) / 2.0f
+            );
+
+        // 2. Вычисляем размер модели (диагональ bounding box)
+        float sizeX = maxX - minX;
+        float sizeY = maxY - minY;
+
+        // Берем максимальную сторону и умножаем на 1.5, чтобы модель влезла в экран
+        float maxDim = std::max({sizeX, sizeY});
+        distanceToModel = maxDim * 1.2f;
+
+        qDebug() << "Scene Center Calculated:" << sceneCenter;
+    }
+}
+
+
 void VoxelWindow::resizeGL(int w, int h) {
     // Обновляем матрицу проекции в шейдере, если нужно
 }
+
+void VoxelWindow::setFOV(float val) { m_fov = val; } // update вызывается таймером, но можно добавить update()
+void VoxelWindow::setDistance(float val) { distanceToModel = val; }
+void VoxelWindow::setLightDirX(float x) { m_lightDir.setX(x); }
+void VoxelWindow::setLightDirY(float y) { m_lightDir.setY(y); }
+void VoxelWindow::setLightDirZ(float z) { m_lightDir.setZ(z); }
+void VoxelWindow::setCameraRotationX(float x) { m_cameraRotation.setX(x); }
+void VoxelWindow::setCameraRotationY(float y) { m_cameraRotation.setY(y); }
+void VoxelWindow::setCameraRotationZ(float z) { m_cameraRotation.setZ(z); }
 
 void VoxelWindow::paintGL() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -155,41 +211,56 @@ void VoxelWindow::paintGL() {
     program.bind();
     vao.bind();
 
-    // Матрицы камеры
     QMatrix4x4 view, proj;
-    proj.perspective(45.0f, (float)width() / height(), 0.1f, 1000.0f);
+    view.setToIdentity();
+    float nearPlane = 0.1f;
+    float farPlane = 5000.0f; // Запас дальности
+
+    proj.perspective(m_fov, (float)width() / height(), nearPlane, farPlane);
+    program.setUniformValue("proj", proj);
+
+    // --- РАСЧЕТ ОРБИТЫ ---
+    // Вращаемся вокруг Y. Используем полярные координаты.
+    float camX = sceneCenter.x() +  distanceToModel;
+    float camZ = sceneCenter.z() + distanceToModel;
+    // Поднимаем камеру чуть выше центра (на половину дистанции)
+    float camY = sceneCenter.y() + (distanceToModel * 0.3f);
+
+    QVector3D orbitCamPos(camX, camY, camZ);
+
     view.lookAt(
-        QVector3D(30, 30, 30),  // Позиция камеры
-        QVector3D(0, 0, 0),     // Смотрим на центр
-        QVector3D(0, 1, 0)      // Вектор вверх
+        orbitCamPos,    // Откуда (летаем)
+        sceneCenter,    // Куда (центр модели)
+        QVector3D(0, 1, 0)
         );
-    view.rotate(time * 10.0f, 0, 1, 0); // Медленное вращение
+
+    view.translate(sceneCenter);
+    view.rotate(m_cameraRotation.y(), 0, 1, 0); // Вращение относительно y
+    view.rotate(m_cameraRotation.x(), 1, 0, 0); // Вращение относительно x
+    view.rotate(m_cameraRotation.z(), 0, 0, 1); // Вращение относительно z
+    view.translate(-sceneCenter);
 
     program.setUniformValue("view", view);
-    program.setUniformValue("proj", proj);
-    program.setUniformValue("voxelSize", 1.0f); // Размер воксела
 
-    QVector3D lightDir = QVector3D(0.5f, 1.0f, 0.3f).normalized();
-    program.setUniformValue("lightDir", lightDir);
-    program.setUniformValue("shininess", 32.0f); // Если добавили в шейдер
+    // Размер точки
+    program.setUniformValue("voxelSize", 1.0f);
 
-    // Позиция камеры для освещения
-    QVector3D camPos = QVector3D(30, 30, 30);
-    program.setUniformValue("viewPos", camPos);
+    // Свет
+    program.setUniformValue("lightDir", m_lightDir);
+    program.setUniformValue("shininess", 32.0f);
 
-    // Палитра
+    // ВАЖНО: Позиция глаза для бликов должна совпадать с реальной камерой
+    program.setUniformValue("viewPos", orbitCamPos);
+
     if (paletteTexture) {
         glActiveTexture(GL_TEXTURE0);
         paletteTexture->bind();
         program.setUniformValue("uPalette", 0);
     }
 
-    // Рисуем (GL_POINTS, т.к. Geometry Shader превратит их в кубы)
     glDrawArrays(GL_POINTS, 0, voxelCount);
 
     if (paletteTexture) paletteTexture->release();
     vao.release();
     program.release();
-
-    time += 0.016f;
 }

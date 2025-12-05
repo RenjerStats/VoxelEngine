@@ -8,7 +8,7 @@ in GS_OUT {
 
 out vec4 FragColor;
 
-uniform sampler2D uPalette; // Ваша палитра 256x1
+uniform sampler2D uPalette; // палитра 256x1
 uniform vec3 lightDir;      // Направление света
 uniform vec3 viewPos;       // Позиция камеры
 uniform float shininess;

@@ -51,9 +51,9 @@ void VoxModel::forEachSolidVoxel(std::function<void(const Voxel&)> callback) con
         uint32_t z = voxelIndex / (model->size_x * model->size_y);
 
         Voxel voxel;
-        voxel.x = x;
-        voxel.y = y;
-        voxel.z = z;
+        voxel.x = y;
+        voxel.y = z;
+        voxel.z = x; // Меняем местами, из-за разницы в системах .vox и OpenGL
         voxel.colorIndex = colorIndex;
 
         const ogt_vox_rgba& rgba = palette.color[colorIndex];
