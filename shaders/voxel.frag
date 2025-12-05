@@ -8,44 +8,85 @@ in GS_OUT {
 
 out vec4 FragColor;
 
-uniform sampler2D uPalette; // палитра 256x1
-uniform vec3 lightDir;      // Направление света
-uniform vec3 viewPos;       // Позиция камеры
+uniform sampler2D uPalette;
+uniform sampler2D shadowMap; // <--- Новая текстура с глубиной
+
+uniform vec3 lightDir;
+uniform vec3 viewPos;
 uniform float shininess;
+uniform mat4 lightSpaceMatrix; // <--- Матрица вида света
+
+// Функция расчета тени
+float ShadowCalculation(vec3 fragPosWorld, vec3 normal, vec3 lightDir)
+{
+    // 1. Переводим позицию фрагмента в пространство света
+    vec4 fragPosLightSpace = lightSpaceMatrix * vec4(fragPosWorld, 1.0);
+
+    // 2. Perspective divide (стандартный шаг, хотя для Ortho он не меняет w)
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+
+    // 3. Приводим диапазон [-1, 1] к [0, 1] для выборки из текстуры
+    projCoords = projCoords * 0.5 + 0.5;
+
+    // 4. Если мы за пределами карты теней (далеко), считаем, что тени нет
+    if(projCoords.z > 1.0)
+        return 0.0;
+
+    // 5. Текущая глубина фрагмента (расстояние от света)
+    float currentDepth = projCoords.z;
+
+    // 6. Bias против "Shadow Acne" (артефакты в виде полос)
+    // Чем больше угол падения света, тем больше bias
+    float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
+
+    // 7. PCF (Percentage-closer filtering) для мягких краев тени
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    for(int x = -1; x <= 1; ++x)
+    {
+        for(int y = -1; y <= 1; ++y)
+        {
+            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
+        }
+    }
+    shadow /= 9.0;
+
+    return shadow;
+}
 
 void main()
 {
-    // --- 1. Получение цвета из палитры ---
-    // Текстурные координаты:
-    // Индекс 0..255 нужно привести к 0..1.
-    // Сдвигаем на 0.5 пикселя, чтобы попасть в центр текселя.
+    // --- 1. Цвет из палитры ---
     float u = (fs_in.colorIdx + 0.5) / 256.0;
     vec4 objectColor = texture(uPalette, vec2(u, 0.5));
-
-    // Если альфа 0, можно отбросить фрагмент (опционально)
     if(objectColor.a < 0.1) discard;
 
-    // --- 2. Освещение (Blinn-Phong) ---
+    // --- 2. Вектора ---
+    vec3 norm = normalize(fs_in.normal);
+    vec3 lightDirNorm = normalize(lightDir); // Направление НА свет
 
-    // Ambient (фоновое)
+    // --- 3. Освещение (Blinn-Phong) ---
+    // Ambient
     float ambientStrength = 0.3;
     vec3 ambient = ambientStrength * objectColor.rgb;
 
-    // Diffuse (рассеянное)
-    vec3 norm = normalize(fs_in.normal);
-    // lightDir у вас уже normalized в C++, но для надежности:
-    vec3 lightDirNorm = normalize(lightDir);
+    // Diffuse
     float diff = max(dot(norm, lightDirNorm), 0.0);
     vec3 diffuse = diff * objectColor.rgb;
 
-    // Specular (блики)
-    float specularStrength = 0.2; // Можно вынести в uniform
+    // Specular
+    float specularStrength = 0.2;
     vec3 viewDir = normalize(viewPos - fs_in.fragPos);
     vec3 halfwayDir = normalize(lightDirNorm + viewDir);
     float spec = pow(max(dot(norm, halfwayDir), 0.0), shininess);
-    vec3 specular = vec3(1.0) * spec * specularStrength; // Белый блик
+    vec3 specular = vec3(1.0) * spec * specularStrength;
 
-    vec3 result = ambient + diffuse + specular;
+    // --- 4. Расчет Тени ---
+    float shadow = ShadowCalculation(fs_in.fragPos, norm, lightDirNorm);
 
-    FragColor = vec4(result, 1.0);
+    // Итоговый цвет: (Ambient + (1.0 - Shadow) * (Diffuse + Specular))
+    vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular));
+
+    FragColor = vec4(lighting, 1.0);
 }

@@ -3,5 +3,6 @@
         <file>voxel.vert</file>
         <file>voxel.frag</file>
         <file>voxel.geom</file>
+        <file>shadow.frag</file>
     </qresource>
 </RCC>

@@ -43,9 +43,17 @@ protected:
 
 private:
     void calculateCenterOfModel();
+    void initShadowFBO();
 
     // Графические объекты
-    QOpenGLShaderProgram program;
+    QOpenGLShaderProgram program;       // Основной шейдер (свет + цвет)
+    QOpenGLShaderProgram shadowProgram; // Теневой шейдер (только глубина)
+
+    // Shadow Mapping ресурсы
+    GLuint depthMapFBO = 0;
+    GLuint depthMapTexture = 0;
+    const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048; // Разрешение тени
+
     QOpenGLBuffer vbo;
     QOpenGLVertexArrayObject vao;
     QOpenGLTexture* paletteTexture = nullptr;
@@ -55,12 +63,10 @@ private:
     // Данные сцены
     std::vector<CudaVoxel> hostCudaVoxels;
     int voxelCount = 0;
-
-    // Путь к файлу сцены
     QString scenePath;
 
-    // --- Параметры рендеринга  ---
-    QVector3D sceneCenter = QVector3D(0, 0, 0); // Центр сцены
+    // Параметры
+    QVector3D sceneCenter;
     float distanceToModel;
     float m_fov;
     QVector3D m_lightDir;
