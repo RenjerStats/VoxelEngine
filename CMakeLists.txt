@@ -8,6 +8,7 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGLWidgets)
 find_package(CUDAToolkit REQUIRED)
+find_package(OpenGL REQUIRED)
 
 add_definitions(-DQT_NO_KEYWORDS) # пришлось использовать, так как KEYWORDS конфликтуют с библиотекой ogt_vox
 
@@ -94,6 +95,7 @@ target_link_libraries(VoxelEngine
     Qt6::OpenGLWidgets
     CUDA::cudart
     CUDA::cuda_driver
+    OpenGL::GL
 )
 
 set_target_properties(VoxelEngine PROPERTIES

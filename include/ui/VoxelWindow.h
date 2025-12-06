@@ -53,6 +53,7 @@ private:
     GLuint depthMapFBO = 0;
     GLuint depthMapTexture = 0;
     const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048; // Разрешение тени
+    float lightBoxScale;
 
     QOpenGLBuffer vbo;
     QOpenGLVertexArrayObject vao;

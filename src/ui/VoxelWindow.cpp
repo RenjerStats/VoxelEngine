@@ -2,6 +2,7 @@
 #include "io/VoxFileParser.h"
 #include "io/VoxScene.h"
 #include "core/Types.h"
+#include "cuda/CudaPhysicsEngine.h"
 
 #include <QDebug>
 #include <QtMath>
@@ -16,6 +17,7 @@ VoxelWindow::VoxelWindow(QWindow* parent)
     , m_cameraRotation(180, -45, 180)
     , distanceToModel(100)
     , sceneCenter(0.0f, 0.0f, 0.0f)
+    , lightBoxScale(100)
 {
     // Настройка формата OpenGL
     QSurfaceFormat format;
@@ -27,7 +29,7 @@ VoxelWindow::VoxelWindow(QWindow* parent)
 
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &VoxelWindow::requestUpdate);
-    timer->start(16);
+    timer->start(16); // Обновляем сцену каждые 16мс (~60 FPS)
 }
 
 VoxelWindow::~VoxelWindow() {
@@ -42,6 +44,8 @@ VoxelWindow::~VoxelWindow() {
     }
     if (depthMapFBO) glDeleteFramebuffers(1, &depthMapFBO);
     if (depthMapTexture) glDeleteTextures(1, &depthMapTexture);
+
+    cuda_cleanup();
 
     doneCurrent();
 }
@@ -171,6 +175,7 @@ void VoxelWindow::loadScene() {
     // Загружаем данные в УЖЕ СОЗДАННЫЙ VBO
     vbo.bind();
     vbo.allocate(hostCudaVoxels.data(), voxelCount * sizeof(CudaVoxel));
+    cuda_registerGLBuffer(vbo.bufferId());
     vbo.release();
 
     // Палитра: Очищаем старую
@@ -227,6 +232,7 @@ void VoxelWindow::calculateCenterOfModel()
         // Берем максимальную сторону и умножаем на 1.5, чтобы модель влезла в экран
         float maxDim = std::max({sizeX, sizeY});
         distanceToModel = maxDim * 1.2f;
+        lightBoxScale = distanceToModel;
 
         qDebug() << "Scene Center Calculated:" << sceneCenter;
     }
@@ -254,14 +260,16 @@ void VoxelWindow::paintGL() {
         return;
     }
 
+    cuda_runSimulation(0.016f, hostCudaVoxels.size());
+
     // ===========================
     // ШАГ 0: Расчет матриц света
     // ===========================
     // Создаем ортогональную матрицу, охватывающую сцену
     // Размер коробки зависит от distanceToModel (размера модели)
-    float orthoSize = distanceToModel * 0.8f; // Подберите коэффициент по вкусу
+    float orthoSize = lightBoxScale; // Подберите коэффициент по вкусу
     QMatrix4x4 lightProjection;
-    lightProjection.ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 1.0f, distanceToModel * 3.0f);
+    lightProjection.ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 1.0f, lightBoxScale * 3.0f);
 
     // "Виртуальная" позиция солнца. Сдвигаем от центра сцены навстречу вектору света
     // m_lightDir у вас (0.5, 1.0, 0.3) -> свет бьет В ЭТУ сторону.

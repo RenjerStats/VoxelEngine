@@ -82,7 +82,14 @@ std::vector<CudaVoxel> VoxModel::getCudaVoxels() const
     std::vector<CudaVoxel> cudaVoxels;
     cudaVoxels.reserve((model->size_x * model->size_y * model->size_z) / 3);
 
-    forEachSolidVoxel([&cudaVoxels](const Voxel& v) {
+    float minX = std::numeric_limits<float>::max();
+    float minY = std::numeric_limits<float>::max();
+    float minZ = std::numeric_limits<float>::max();
+
+    float maxX = std::numeric_limits<float>::lowest();
+    float maxZ = std::numeric_limits<float>::lowest();
+
+    forEachSolidVoxel([&](const Voxel& v) {
         CudaVoxel cv;
         cv.x = (float)v.x;
         cv.y = (float)v.y;
@@ -94,7 +101,32 @@ std::vector<CudaVoxel> VoxModel::getCudaVoxels() const
         cv.colorID = (float)v.colorIndex;
 
         cudaVoxels.push_back(cv);
+
+        minX = std::min(minX, cv.x);
+        maxX = std::max(maxX, cv.x);
+        minY = std::min(minY, cv.y);
+        minZ = std::min(minZ, cv.z);
+        maxZ = std::max(maxZ, cv.z);
     });
+
+
+    float diffX = maxX-minX;
+    float diffZ = maxZ-minZ;
+    for (int x = minX-(int)(diffX*0.4); x < maxX+(int)(diffX*0.4); ++x) {
+        for (int z = minZ-(int)(diffZ*0.4); z < maxZ+(int)(diffZ*0.4); ++z) {
+            CudaVoxel cv;
+            cv.x = (float)x;
+            cv.y = minY-1;
+            cv.z = (float)z;
+            cv.vx = 0.0f; cv.vy = 0.0f; cv.vz = 0.0f;
+            cv.mass = 0.0f; // неподвижный воксель
+            cv.friction = 0.95f;
+            cv.elasticity = 0.5f;
+            cv.colorID = 1;
+
+            cudaVoxels.push_back(cv);
+        }
+    }
 
     return cudaVoxels;
 }
