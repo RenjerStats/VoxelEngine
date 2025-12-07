@@ -1,4 +1,3 @@
-#include "cuda/SpatialHash.h"
 #include "cuda/KernelLauncher.h"
 #include "core/Types.h"
 
@@ -7,43 +6,7 @@
 #include <thrust/device_ptr.h>
 #include <thrust/sort.h>
 
-
-// Конструктор
-SpatialHash::SpatialHash(unsigned int gridSize, float cellSize)
-    : m_numVoxels(0), m_gridSize(gridSize), m_cellSize(cellSize),
-    d_gridParticleHash(nullptr), d_gridParticleIndex(nullptr),
-    d_cellStart(nullptr), d_cellEnd(nullptr)
-{
-    // Выделяем память под фиксированную таблицу ячеек сразу
-    cudaMalloc((void**)&d_cellStart, m_gridSize * sizeof(unsigned int));
-    cudaMalloc((void**)&d_cellEnd, m_gridSize * sizeof(unsigned int));
-}
-
-// Деструктор
-SpatialHash::~SpatialHash() {
-    if (d_gridParticleHash) cudaFree(d_gridParticleHash);
-    if (d_gridParticleIndex) cudaFree(d_gridParticleIndex);
-    if (d_cellStart) cudaFree(d_cellStart);
-    if (d_cellEnd) cudaFree(d_cellEnd);
-}
-
-// Метод resize
-void SpatialHash::resize(unsigned int numVoxels) {
-    if (m_numVoxels == numVoxels) return;
-
-    if (d_gridParticleHash) cudaFree(d_gridParticleHash);
-    if (d_gridParticleIndex) cudaFree(d_gridParticleIndex);
-
-    m_numVoxels = numVoxels;
-
-    if (m_numVoxels > 0) {
-        cudaMalloc((void**)&d_gridParticleHash, m_numVoxels * sizeof(unsigned int));
-        cudaMalloc((void**)&d_gridParticleIndex, m_numVoxels * sizeof(unsigned int));
-    }
-}
-
-// --- KERNELS (как и были, но теперь статические или в анонимном пространстве имен) ---
-
+// --- KERNELS ---
 __device__ int calcGridHash(int gridPos_x, int gridPos_y, int gridPos_z, int gridSize) {
     const int p1 = 73856093;
     const int p2 = 19349663;
@@ -58,8 +21,6 @@ __global__ void calcHashKernel(unsigned int* gridParticleHash, unsigned int* gri
     if (index >= numVoxels) return;
 
     CudaVoxel v = voxels[index];
-    // Проверка на "мертвые" воксели, если нужно
-    if (v.mass == 0.0f) return;
 
     int gridPos_x = floorf(v.x / cellSize);
     int gridPos_y = floorf(v.y / cellSize);
@@ -93,9 +54,7 @@ __global__ void findCellBoundsKernel(unsigned int* gridParticleHash, unsigned in
 }
 
 // --- LAUNCHER IMPLEMENTATION ---
-
 extern "C" {
-
 // Единая точка входа для построения структуры данных
 void launch_buildSpatialHash(
     CudaVoxel* d_voxels,
@@ -131,6 +90,6 @@ void launch_buildSpatialHash(
     findCellBoundsKernel<<<blocksParticles, threads>>>(
         d_gridParticleHash, d_cellStart, d_cellEnd, numVoxels
         );
-}
 
+}
 }

@@ -5,6 +5,8 @@
 #include "cuda/CudaInitializer.h"
 #include <cuda_runtime.h>
 
+#include <QDebug>
+
 
 PhysicsManager::PhysicsManager()
     : frameRate(60), countVoxels(0), cuda_vbo_resource(nullptr)
@@ -62,7 +64,7 @@ void PhysicsManager::initSumulation(bool withVoxelConnection, bool withVoxelColl
 
 void PhysicsManager::updatePhysics(float speedSimulation, float stability, bool enableGravity)
 {
-    CudaVoxel* d_voxels ;
+    CudaVoxel* d_voxels;
     size_t num_bytes;
     cudaGraphicsMapResources(1, &cuda_vbo_resource, 0);
     cudaGraphicsResourceGetMappedPointer((void**)&d_voxels , &num_bytes, cuda_vbo_resource);
@@ -74,35 +76,44 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability, bool 
         launch_gravityKernel(dt, countVoxels, d_voxels);
     }
 
-    launch_buildSpatialHash(
-        d_voxels,
-        countVoxels,
-        m_spatialHash->getGridParticleHash(),
-        m_spatialHash->getGridParticleIndex(),
-        m_spatialHash->getCellStart(),
-        m_spatialHash->getCellEnd(),
-        m_spatialHash->getGridSize(),
-        m_spatialHash->getCellSize()
-        );
+    for (int var = 0; var < 1; ++var) {
+        launch_buildSpatialHash(
+            d_voxels,
+            countVoxels,
+            m_spatialHash->getGridParticleHash(),
+            m_spatialHash->getGridParticleIndex(),
+            m_spatialHash->getCellStart(),
+            m_spatialHash->getCellEnd(),
+            m_spatialHash->getGridSize(),
+            m_spatialHash->getCellSize()
+            );
 
-    // 4. Решение коллизий (использует подготовленную таблицу)
-    //launch_solveCollisions(
-    //    d_voxels,
-    //    countVoxels,
-    //    m_spatialHash->getGridParticleIndex(), // Передаем отсортированные индексы, если нужно
-    //    m_spatialHash->getCellStart(),
-    //    m_spatialHash->getCellEnd(),
-    //    m_spatialHash->getGridSize(),
-    //    m_spatialHash->getCellSize()
-    //    );
+        launch_solveCollisions(
+            d_voxels,
+            countVoxels,
+            m_spatialHash->getGridParticleIndex(), // Передаем отсортированные индексы, если нужно
+            m_spatialHash->getCellStart(),
+            m_spatialHash->getCellEnd(),
+            m_spatialHash->getGridSize(),
+            m_spatialHash->getCellSize()
+            );
+    }
 
-    launch_gravityKernel(dt, countVoxels, d_voxels );
     launch_floorKernel(0.9, countVoxels, d_voxels );
 
     cudaGraphicsUnmapResources(1, &cuda_vbo_resource, 0);
+
+
+    //cudaDeviceSynchronize();
+    //cudaError_t err = cudaGetLastError();
+    //if (err != cudaSuccess) {
+    //    qCritical() << "CUDA registration failed:" << cudaGetErrorString(err);
+    //}
 }
 
 void PhysicsManager::freeResources()
 {
     cuda_cleanup(cuda_vbo_resource);
+    cuda_vbo_resource = nullptr;
+    m_spatialHash.reset();
 }

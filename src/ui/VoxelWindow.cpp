@@ -253,6 +253,7 @@ void VoxelWindow::resetSimulation(){
     vbo.release();
 
     physicsManager.registerVoxelSharedBuffer(vbo.bufferId());
+    physicsManager.initSumulation();
 
     requestUpdate();
 }

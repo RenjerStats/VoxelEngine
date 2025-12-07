@@ -96,8 +96,8 @@ std::vector<CudaVoxel> VoxModel::getCudaVoxels() const
         cv.z = (float)v.z;
         cv.vx = 0.0f; cv.vy = 0.0f; cv.vz = 0.0f;
         cv.mass = 1.0f;
-        cv.friction = 0.99f;
-        cv.elasticity = 0.5f;
+        cv.friction = 0.3f;
+        cv.elasticity = 0.8f;
         cv.colorID = (float)v.colorIndex;
 
         cudaVoxels.push_back(cv);

@@ -62,10 +62,10 @@ set(SOURCES
 )
 
 set(CUDA_SOURCES
-    src/cuda/GravityKernel.cu
+    src/cuda/Gravity.cu
     src/cuda/SpatialHash.cu
     src/cuda/FloorCollision.cu
-    src/cuda/PBDSolver.cu
+    src/cuda/VoxelCollision.cu
     src/cuda/CudaUtils.cu
     src/cuda/CudaInitializer.cu
 )

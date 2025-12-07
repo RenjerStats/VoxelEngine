@@ -6,7 +6,7 @@
 #include <GL/gl.h>
 
 #include <cuda_runtime.h>
-#include <cuda_gl_interop.h>
+#include <device_launch_parameters.h>
 #include <stdio.h>
 
 __global__ void gravityKernel(CudaVoxel* voxels, int count, float dt) {
