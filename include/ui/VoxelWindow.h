@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics/PhysicsManager.h"
+
 #include <QOpenGLWindow>
 #include <QOpenGLFunctions_4_5_Core>
 #include <QOpenGLShaderProgram>
@@ -22,6 +24,7 @@ public:
 
     // Метод для установки пути к файлу (используется для загрузки)
     void setScenePath(const QString& path) { scenePath = path; }
+    void resetSimulation();
 
 
     void setFOV(float val);
@@ -72,4 +75,8 @@ private:
     float m_fov;
     QVector3D m_lightDir;
     QVector3D m_cameraRotation;
+
+
+    // физика
+    PhysicsManager physicsManager;
 };

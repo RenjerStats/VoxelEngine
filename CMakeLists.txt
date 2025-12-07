@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(VoxelEngine LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CUDA_STANDARD 14)
+set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
@@ -23,16 +23,11 @@ set(HEADERS
     include/io/VoxScene.h
     include/io/ogt_vox.h
     # Physics
-    include/physics/PhysicsTypes.h
-    include/physics/RigidBodyConstraint.h
-    include/physics/ConstraintGraph.h
-    include/physics/PhysicsWorld.h
+    include/physics/PhysicsManager.h
     # CUDA
-    include/cuda/CudaPhysicsEngine.h
-    include/cuda/SpatialHash.cuh
-    include/cuda/Collision.cuh
-    include/cuda/PBDSolver.cuh
-    include/cuda/CudaUtils.cuh
+    include/cuda/KernelLauncher.h
+    include/cuda/CudaInitializer.h
+    include/cuda/SpatialHash.h
     # Rendering
     include/rendering/VoxelRenderer.h
     include/rendering/GLCudaInterop.h
@@ -54,9 +49,7 @@ set(SOURCES
     src/io/VoxFileParser.cpp
     src/io/VoxScene.cpp
     # Physics
-    src/physics/RigidBodyConstraint.cpp
-    src/physics/ConstraintGraph.cpp
-    src/physics/PhysicsWorld.cpp
+    src/physics/PhysicsManager.cpp
     # Rendering
     src/rendering/VoxelRenderer.cpp
     src/rendering/GLCudaInterop.cpp
@@ -69,11 +62,12 @@ set(SOURCES
 )
 
 set(CUDA_SOURCES
-    src/cuda/CudaPhysicsEngine.cu
+    src/cuda/GravityKernel.cu
     src/cuda/SpatialHash.cu
-    src/cuda/Collision.cu
+    src/cuda/FloorCollision.cu
     src/cuda/PBDSolver.cu
     src/cuda/CudaUtils.cu
+    src/cuda/CudaInitializer.cu
 )
 
 set(RESOURCES
@@ -85,6 +79,7 @@ add_executable(VoxelEngine
     ${SOURCES}
     ${CUDA_SOURCES}
     ${RESOURCES}
+
 )
 
 target_include_directories(VoxelEngine PRIVATE include)

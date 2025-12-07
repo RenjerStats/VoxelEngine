@@ -116,7 +116,7 @@ std::vector<CudaVoxel> VoxModel::getCudaVoxels() const
         for (int z = minZ-(int)(diffZ*0.4); z < maxZ+(int)(diffZ*0.4); ++z) {
             CudaVoxel cv;
             cv.x = (float)x;
-            cv.y = minY-1;
+            cv.y = -1;
             cv.z = (float)z;
             cv.vx = 0.0f; cv.vy = 0.0f; cv.vz = 0.0f;
             cv.mass = 0.0f; // неподвижный воксель

@@ -56,7 +56,7 @@ void MainWindow::setupUI() {
 
     // Создаем окно рендеринга (оно нужно нам для замыканий в лямбдах)
     voxelWindow = new VoxelWindow();
-    voxelWindow->setScenePath("assets/monu2.vox");
+    voxelWindow->setScenePath("assets/test3.vox");
 
     // --- 1. Слайдер FOV (Field of View) ---
     // Диапазон: 10..120 градусов
@@ -101,6 +101,17 @@ void MainWindow::setupUI() {
     });
     addSliderControl(panelLayout, "Cam Z", -180, 180, 180, [this](int v){
         voxelWindow->setCameraRotationZ(v);
+    });
+
+    // Разделитель
+    panelLayout->addSpacing(15);
+    panelLayout->addWidget(new QLabel("<b>Physics control</b>", controlPanel));
+
+    QPushButton* resetButton = new QPushButton("Reset Simulation", controlPanel);
+    panelLayout->addWidget(resetButton);
+
+    connect(resetButton, &QPushButton::clicked, [this](){
+        voxelWindow->resetSimulation();
     });
 
 

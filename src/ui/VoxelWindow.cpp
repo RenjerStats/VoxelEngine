@@ -2,7 +2,6 @@
 #include "io/VoxFileParser.h"
 #include "io/VoxScene.h"
 #include "core/Types.h"
-#include "cuda/CudaPhysicsEngine.h"
 
 #include <QDebug>
 #include <QtMath>
@@ -45,7 +44,7 @@ VoxelWindow::~VoxelWindow() {
     if (depthMapFBO) glDeleteFramebuffers(1, &depthMapFBO);
     if (depthMapTexture) glDeleteTextures(1, &depthMapTexture);
 
-    cuda_cleanup();
+    physicsManager.freeResources();
 
     doneCurrent();
 }
@@ -175,7 +174,6 @@ void VoxelWindow::loadScene() {
     // Загружаем данные в УЖЕ СОЗДАННЫЙ VBO
     vbo.bind();
     vbo.allocate(hostCudaVoxels.data(), voxelCount * sizeof(CudaVoxel));
-    cuda_registerGLBuffer(vbo.bufferId());
     vbo.release();
 
     // Палитра: Очищаем старую
@@ -192,6 +190,11 @@ void VoxelWindow::loadScene() {
     paletteTexture->setMinificationFilter(QOpenGLTexture::Nearest);
     paletteTexture->setMagnificationFilter(QOpenGLTexture::Nearest);
     paletteTexture->setWrapMode(QOpenGLTexture::ClampToEdge);
+
+    physicsManager = PhysicsManager(60, voxelCount);
+    physicsManager.registerVoxelSharedBuffer(vbo.bufferId());
+    physicsManager.initSumulation();
+
 
     // Запускаем перерисовку
     requestUpdate();
@@ -238,6 +241,22 @@ void VoxelWindow::calculateCenterOfModel()
     }
 }
 
+void VoxelWindow::resetSimulation(){
+    if (hostCudaVoxels.empty()) return;
+
+    qDebug() << "Resetting simulation...";
+
+    physicsManager.freeResources();
+
+    vbo.bind();
+    vbo.write(0, hostCudaVoxels.data(), hostCudaVoxels.size() * sizeof(CudaVoxel));
+    vbo.release();
+
+    physicsManager.registerVoxelSharedBuffer(vbo.bufferId());
+
+    requestUpdate();
+}
+
 
 void VoxelWindow::resizeGL(int w, int h) {
     // Обновляем матрицу проекции в шейдере, если нужно
@@ -260,7 +279,7 @@ void VoxelWindow::paintGL() {
         return;
     }
 
-    cuda_runSimulation(0.016f, hostCudaVoxels.size());
+    physicsManager.updatePhysics(1, 0.99);
 
     // ===========================
     // ШАГ 0: Расчет матриц света
