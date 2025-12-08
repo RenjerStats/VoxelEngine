@@ -18,10 +18,13 @@ void launch_buildSpatialHash(
     float cellSize
     );
 
-// Кернел коллизий (пример, его нужно реализовать отдельно по аналогии с Gravity)
-void launch_solveCollisions(
+
+void launch_updatePhysicsPBD(
     CudaVoxel* d_voxels,
     unsigned int numVoxels,
+    float dt,
+    unsigned int substeps,
+    unsigned int* d_gridParticleHash,
     unsigned int* d_gridParticleIndex,
     unsigned int* d_cellStart,
     unsigned int* d_cellEnd,

@@ -18,7 +18,7 @@ public:
 
     void initSumulation(bool withVoxelConnection = false, bool withVoxelCollision = true);
 
-    void updatePhysics(float speedSimulation, float stability, bool enableGravity = true);
+    void updatePhysics(float speedSimulation, float stability);
 
     void freeResources();
 

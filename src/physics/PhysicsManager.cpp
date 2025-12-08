@@ -24,27 +24,30 @@ PhysicsManager::~PhysicsManager() {
     freeResources();
 }
 
-PhysicsManager::PhysicsManager(PhysicsManager&& other) noexcept
-    : cuda_vbo_resource(other.cuda_vbo_resource)
-    , frameRate(other.frameRate)
-    , countVoxels(other.countVoxels)
-    , m_spatialHash(std::move(other.m_spatialHash))
+void PhysicsManager::freeResources()
 {
-    other.cuda_vbo_resource = nullptr; // Забираем владение ресурсом
+    cuda_cleanup(cuda_vbo_resource);
+    cuda_vbo_resource = nullptr;
+    m_spatialHash.reset();
 }
 
-// Реализация перемещающего оператора присваивания
+PhysicsManager::PhysicsManager(PhysicsManager&& other) noexcept
+    : cuda_vbo_resource(other.cuda_vbo_resource),
+    frameRate(other.frameRate),
+    countVoxels(other.countVoxels),
+    m_spatialHash(std::move(other.m_spatialHash)) {
+    other.cuda_vbo_resource = nullptr;
+}
+
 PhysicsManager& PhysicsManager::operator=(PhysicsManager&& other) noexcept {
     if (this != &other) {
-        freeResources(); // Очищаем свои текущие ресурсы
+        freeResources();
 
-        // Забираем данные
         cuda_vbo_resource = other.cuda_vbo_resource;
         frameRate = other.frameRate;
         countVoxels = other.countVoxels;
         m_spatialHash = std::move(other.m_spatialHash);
 
-        // Обнуляем источник, чтобы его деструктор не удалил наш ресурс
         other.cuda_vbo_resource = nullptr;
     }
     return *this;
@@ -58,11 +61,10 @@ void PhysicsManager::registerVoxelSharedBuffer(unsigned int vboID)
 
 void PhysicsManager::initSumulation(bool withVoxelConnection, bool withVoxelCollision)
 {
-    // Создаем объект хэша (память выделяется в конструкторе или первом resize)
     m_spatialHash = std::make_unique<SpatialHash>();
 }
 
-void PhysicsManager::updatePhysics(float speedSimulation, float stability, bool enableGravity)
+void PhysicsManager::updatePhysics(float speedSimulation, float stability)
 {
     CudaVoxel* d_voxels;
     size_t num_bytes;
@@ -71,35 +73,30 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability, bool 
 
     m_spatialHash->resize(countVoxels);
     float dt = (1.0f / frameRate) * speedSimulation;
+    unsigned int substeps =  1 + (unsigned int)(stability * 5);
 
-    if (enableGravity) {
-        launch_gravityKernel(dt, countVoxels, d_voxels);
-    }
+    launch_buildSpatialHash(
+        d_voxels, countVoxels,
+        m_spatialHash->getGridParticleHash(),
+        m_spatialHash->getGridParticleIndex(),
+        m_spatialHash->getCellStart(),
+        m_spatialHash->getCellEnd(),
+        m_spatialHash->getGridSize(),
+        m_spatialHash->getCellSize()
+        );
 
-    for (int var = 0; var < 1; ++var) {
-        launch_buildSpatialHash(
-            d_voxels,
-            countVoxels,
-            m_spatialHash->getGridParticleHash(),
-            m_spatialHash->getGridParticleIndex(),
-            m_spatialHash->getCellStart(),
-            m_spatialHash->getCellEnd(),
-            m_spatialHash->getGridSize(),
-            m_spatialHash->getCellSize()
-            );
-
-        launch_solveCollisions(
-            d_voxels,
-            countVoxels,
-            m_spatialHash->getGridParticleIndex(), // Передаем отсортированные индексы, если нужно
-            m_spatialHash->getCellStart(),
-            m_spatialHash->getCellEnd(),
-            m_spatialHash->getGridSize(),
-            m_spatialHash->getCellSize()
-            );
-    }
-
-    launch_floorKernel(0.9, countVoxels, d_voxels );
+    launch_updatePhysicsPBD(
+        d_voxels,
+        countVoxels,
+        dt,
+        substeps,
+        m_spatialHash->getGridParticleHash(),
+        m_spatialHash->getGridParticleIndex(),
+        m_spatialHash->getCellStart(),
+        m_spatialHash->getCellEnd(),
+        m_spatialHash->getGridSize(),
+        m_spatialHash->getCellSize()
+        );
 
     cudaGraphicsUnmapResources(1, &cuda_vbo_resource, 0);
 
@@ -109,11 +106,4 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability, bool 
     //if (err != cudaSuccess) {
     //    qCritical() << "CUDA registration failed:" << cudaGetErrorString(err);
     //}
-}
-
-void PhysicsManager::freeResources()
-{
-    cuda_cleanup(cuda_vbo_resource);
-    cuda_vbo_resource = nullptr;
-    m_spatialHash.reset();
 }

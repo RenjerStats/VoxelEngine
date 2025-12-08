@@ -5,4 +5,5 @@ struct CudaVoxel {      //offsets
     float friction;     // 28 bytes
     float elasticity;   // 32 bytes
     float colorID;      // 36 bytes
+    float oldX, oldY, oldZ;
 };

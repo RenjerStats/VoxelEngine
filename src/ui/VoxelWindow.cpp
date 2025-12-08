@@ -280,7 +280,7 @@ void VoxelWindow::paintGL() {
         return;
     }
 
-    physicsManager.updatePhysics(1, 0.99);
+    physicsManager.updatePhysics(1, 3);
 
     // ===========================
     // ШАГ 0: Расчет матриц света

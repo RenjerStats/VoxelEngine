@@ -66,7 +66,7 @@ set(CUDA_SOURCES
     src/cuda/SpatialHash.cu
     src/cuda/FloorCollision.cu
     src/cuda/VoxelCollision.cu
-    src/cuda/CudaUtils.cu
+    src/cuda/VoxelSortByY.cu
     src/cuda/CudaInitializer.cu
 )
 
