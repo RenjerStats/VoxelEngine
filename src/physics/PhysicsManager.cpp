@@ -66,44 +66,67 @@ void PhysicsManager::initSumulation(bool withVoxelConnection, bool withVoxelColl
 
 void PhysicsManager::updatePhysics(float speedSimulation, float stability)
 {
+    if (countVoxels == 0) return;
+
     CudaVoxel* d_voxels;
     size_t num_bytes;
-    cudaGraphicsMapResources(1, &cuda_vbo_resource, 0);
+
+    cudaError_t err = cudaGraphicsMapResources(1, &cuda_vbo_resource, 0);
+    if (err != cudaSuccess) return;
+
     cudaGraphicsResourceGetMappedPointer((void**)&d_voxels , &num_bytes, cuda_vbo_resource);
 
+
+    float fixedDt = 1.0f / (float)frameRate;
+    float totalDt = fixedDt * speedSimulation;
+
+    // PBD требует малых шагов для жестких контактов
+    unsigned int substeps = std::max(1u, (unsigned int)(stability * 5));
+    float subDt = totalDt / (float)substeps;
+
+    // Итерации солвера внутри одного сабстепа (Solver Iterations)
+    // Для вокселей часто хватает 1-2 итераций если много сабстепов.
+    int solverIterations = 2;
+
     m_spatialHash->resize(countVoxels);
-    float dt = (1.0f / frameRate) * speedSimulation;
-    unsigned int substeps =  1 + (unsigned int)(stability * 5);
+    float gravity = -9.8f;
+    float damping = 0.9999f; // Глобальное затухание
 
-    launch_buildSpatialHash(
-        d_voxels, countVoxels,
-        m_spatialHash->getGridParticleHash(),
-        m_spatialHash->getGridParticleIndex(),
-        m_spatialHash->getCellStart(),
-        m_spatialHash->getCellEnd(),
-        m_spatialHash->getGridSize(),
-        m_spatialHash->getCellSize()
-        );
+    // --- MAIN PBD LOOP ---
+    for (unsigned int s = 0; s < substeps; s++) {
 
-    launch_updatePhysicsPBD(
-        d_voxels,
-        countVoxels,
-        dt,
-        substeps,
-        m_spatialHash->getGridParticleHash(),
-        m_spatialHash->getGridParticleIndex(),
-        m_spatialHash->getCellStart(),
-        m_spatialHash->getCellEnd(),
-        m_spatialHash->getGridSize(),
-        m_spatialHash->getCellSize()
-        );
+        // 1. Prediction (Apply Gravity, x* = x + v*dt)
+        launch_predictPositions(d_voxels, countVoxels, subDt, gravity);
+
+        // 2. Broad Phase (Spatial Hash)
+        // Хеш нужно перестраивать, т.к. позиции (x*) изменились
+        launch_buildSpatialHash(
+            d_voxels, countVoxels,
+            m_spatialHash->getGridParticleHash(),
+            m_spatialHash->getGridParticleIndex(),
+            m_spatialHash->getCellStart(),
+            m_spatialHash->getCellEnd(),
+            m_spatialHash->getGridSize(),
+            m_spatialHash->getCellSize()
+            );
+
+        // 3. Constraint Solver Loop
+        for (int i = 0; i < solverIterations; i++) {
+            launch_solveCollisionsPBD(
+                d_voxels,
+                countVoxels,
+                m_spatialHash->getGridParticleIndex(),
+                m_spatialHash->getCellStart(),
+                m_spatialHash->getCellEnd(),
+                m_spatialHash->getGridSize(),
+                m_spatialHash->getCellSize(),
+                subDt
+                );
+        }
+
+        // 4. Velocity Update (v = (x* - x_old) / dt)
+        launch_updateVelocities(d_voxels, countVoxels, subDt, damping);
+    }
 
     cudaGraphicsUnmapResources(1, &cuda_vbo_resource, 0);
-
-
-    //cudaDeviceSynchronize();
-    //cudaError_t err = cudaGetLastError();
-    //if (err != cudaSuccess) {
-    //    qCritical() << "CUDA registration failed:" << cudaGetErrorString(err);
-    //}
 }

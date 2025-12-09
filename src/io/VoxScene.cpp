@@ -94,6 +94,9 @@ std::vector<CudaVoxel> VoxModel::getCudaVoxels() const
         cv.x = (float)v.x;
         cv.y = (float)v.y;
         cv.z = (float)v.z;
+        cv.oldX = cv.x;
+        cv.oldY = cv.y;
+        cv.oldZ = cv.z;
         cv.vx = 0.0f; cv.vy = 0.0f; cv.vz = 0.0f;
         cv.mass = 1.0f;
         cv.friction = 0.5f;
@@ -118,6 +121,9 @@ std::vector<CudaVoxel> VoxModel::getCudaVoxels() const
             cv.x = (float)x;
             cv.y = -1;
             cv.z = (float)z;
+            cv.oldX = cv.x;
+            cv.oldY = cv.y;
+            cv.oldZ = cv.z;
             cv.vx = 0.0f; cv.vy = 0.0f; cv.vz = 0.0f;
             cv.mass = 0.0f; // неподвижный воксель
             cv.friction = 0.95f;

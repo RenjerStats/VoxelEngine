@@ -1,20 +1,21 @@
 #include "cuda/KernelLauncher.h"
 #include "core/Types.h"
-
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <math.h>
 
-// --- КОНСТАНТЫ ---
+__device__ inline float3 operator+(const float3& a, const float3& b) { return make_float3(a.x + b.x, a.y + b.y, a.z + b.z); }
+__device__ inline float3 operator-(const float3& a, const float3& b) { return make_float3(a.x - b.x, a.y - b.y, a.z - b.z); }
+__device__ inline float3 operator*(const float3& a, float b) { return make_float3(a.x * b, a.y * b, a.z * b); }
+__device__ inline float3 operator/(const float3& a, float b) { return make_float3(a.x / b, a.y / b, a.z / b); }
+__device__ inline float dot(const float3& a, const float3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+__device__ inline float length(const float3& a) { return sqrtf(dot(a, a)); }
+
+// --- CONSTANTS ---
 #define VOXEL_SIZE 1.0f
-#define VOXEL_HALF 0.5f
-#define EPSILON 1e-6f
+#define EPSILON 1e-5f
 
-// Порог скорости для "засыпания" контактов.
-// Если скорость удара меньше 2 * G * dt (примерно), считаем это покоем.
-#define RESTITUTION_THRESHOLD 2.0f
-
-__device__ inline int getGridHashPBD(int gridPos_x, int gridPos_y, int gridPos_z, int gridSize) {
+__device__ inline int getGridHash(int gridPos_x, int gridPos_y, int gridPos_z, int gridSize) {
     const int p1 = 73856093;
     const int p2 = 19349663;
     const int p3 = 83492791;
@@ -22,61 +23,42 @@ __device__ inline int getGridHashPBD(int gridPos_x, int gridPos_y, int gridPos_z
     return n & (gridSize - 1);
 }
 
-__device__ bool checkIntersection(
-    const CudaVoxel& a,
-    const CudaVoxel& b,
-    float3& normal,
-    float& depth
-    ) {
-    float dx = a.x - b.x;
-    float dy = a.y - b.y;
-    float dz = a.z - b.z;
-
-    float x_overlap = VOXEL_SIZE - fabsf(dx);
-    float y_overlap = VOXEL_SIZE - fabsf(dy);
-    float z_overlap = VOXEL_SIZE - fabsf(dz);
-
-    if (x_overlap <= 0.0f || y_overlap <= 0.0f || z_overlap <= 0.0f)
-        return false;
-
-    if (x_overlap < y_overlap && x_overlap < z_overlap) {
-        normal = make_float3(dx > 0 ? 1.0f : -1.0f, 0.0f, 0.0f);
-        depth = x_overlap;
-    } else if (y_overlap < z_overlap) {
-        normal = make_float3(0.0f, dy > 0 ? 1.0f : -1.0f, 0.0f);
-        depth = y_overlap;
-    } else {
-        normal = make_float3(0.0f, 0.0f, dz > 0 ? 1.0f : -1.0f);
-        depth = z_overlap;
-    }
-    return true;
-}
-
+// ------------------------------------------------------------------
 // 1. PREDICTION STEP
-__global__ void predictPositionsKernel(CudaVoxel* voxels, int count, float sub_dt, float gravityY) {
+// x* = x + v * dt + f_ext * dt^2
+// ------------------------------------------------------------------
+__global__ void predictPositionsKernel(CudaVoxel* voxels, int count, float dt, float gravity) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= count) return;
 
     CudaVoxel v = voxels[idx];
-    if (v.mass == 0.0f) return;
 
+    // Сохраняем предыдущую позицию для Velocity Update в конце шага
     v.oldX = v.x;
     v.oldY = v.y;
     v.oldZ = v.z;
 
-    // Применяем гравитацию к текущей скорости
-    v.vy += gravityY * sub_dt;
+    if (v.mass <= 0.0f) return; // Статика не двигается
+
+    // Применяем внешние силы (Гравитация) к скорости
+    // v = v + dt * f_ext
+    v.vy += gravity * dt;
 
     // Предсказываем позицию
-    v.x += v.vx * sub_dt;
-    v.y += v.vy * sub_dt;
-    v.z += v.vz * sub_dt;
+    // x* = x + v * dt
+    v.x += v.vx * dt;
+    v.y += v.vy * dt;
+    v.z += v.vz * dt;
 
     voxels[idx] = v;
 }
 
-// 2. SOLVER STEP (С исправленным отскоком и стабильностью стека)
-__global__ void solveConstraintsKernel(
+// ------------------------------------------------------------------
+// 2. SOLVER STEP
+// Используем метод Якоби: каждый поток считает свои коллизии
+// и усредняет результат.
+// ------------------------------------------------------------------
+__global__ void solveCollisionsPBDKernel(
     CudaVoxel* voxels,
     int numVoxels,
     unsigned int* gridParticleIndex,
@@ -84,26 +66,30 @@ __global__ void solveConstraintsKernel(
     unsigned int* cellEnd,
     unsigned int gridSize,
     float cellSize,
-    float sub_dt
+    float dt
     ) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= numVoxels) return;
 
     CudaVoxel me = voxels[idx];
-    if (me.mass == 0.0f) return;
+    if (me.mass <= 0.0f) return; // Статика не решается
 
-    float3 pos_correction = make_float3(0.0f, 0.0f, 0.0f);
-    float3 velocity_bias = make_float3(0.0f, 0.0f, 0.0f); // Для отскока и трения
-    int contact_count = 0;
+    float3 pos = make_float3(me.x, me.y, me.z);
+    float3 originalPos = make_float3(me.oldX, me.oldY, me.oldZ); // x_prev
+
+    // Накопитель коррекций для усреднения (Averaging)
+    float3 totalDelta = make_float3(0, 0, 0);
+    int constraintCount = 0;
 
     int gridX = floorf(me.x / cellSize);
     int gridY = floorf(me.y / cellSize);
     int gridZ = floorf(me.z / cellSize);
 
+    // Поиск соседей (Broad Phase)
     for (int z = -1; z <= 1; z++) {
         for (int y = -1; y <= 1; y++) {
             for (int x = -1; x <= 1; x++) {
-                int hash = getGridHashPBD(gridX + x, gridY + y, gridZ + z, gridSize);
+                int hash = getGridHash(gridX + x, gridY + y, gridZ + z, gridSize);
                 unsigned int start = cellStart[hash];
                 unsigned int end = cellEnd[hash];
 
@@ -111,148 +97,176 @@ __global__ void solveConstraintsKernel(
                     unsigned int neighborIdx = gridParticleIndex[k];
                     if (neighborIdx == idx) continue;
 
-                    CudaVoxel other = voxels[neighborIdx];
-                    float3 normal;
-                    float depth;
+                   CudaVoxel other = voxels[neighborIdx];
 
-                    if (checkIntersection(me, other, normal, depth)) {
-                        float w1 = (me.mass > 0.0f) ? 1.0f / me.mass : 0.0f;
-                        float w2 = (other.mass > 0.0f) ? 1.0f / other.mass : 0.0f;
-                        float wSum = w1 + w2;
+                    // --- Narrow Phase (AABB Intersection) ---
+                    float3 otherPos = make_float3(other.x, other.y, other.z);
+                    float3 diff = pos - otherPos;
 
-                        if (wSum > EPSILON) {
-                            float factor = w1 / wSum;
+                    float x_overlap = VOXEL_SIZE - fabsf(diff.x);
+                    float y_overlap = VOXEL_SIZE - fabsf(diff.y);
+                    float z_overlap = VOXEL_SIZE - fabsf(diff.z);
 
-                            // 1. Позиционное выталкивание (anti-penetration)
-                            // Это жесткое ограничение (Inequality constraint)
-                            pos_correction.x += normal.x * depth * factor;
-                            pos_correction.y += normal.y * depth * factor;
-                            pos_correction.z += normal.z * depth * factor;
+                    // Если есть пересечение по всем осям
+                    if (x_overlap > EPSILON && y_overlap > EPSILON && z_overlap > EPSILON) {
 
-                            // 2. Расчет относительной скорости для трения и отскока
-                            // Вычисляем текущую "предсказанную" скорость на основе разницы позиций
-                            // (me.x - me.oldX) / sub_dt
-                            float3 v_me = make_float3(
-                                (me.x - me.oldX) / sub_dt,
-                                (me.y - me.oldY) / sub_dt,
-                                (me.z - me.oldZ) / sub_dt
-                                );
+                        // Находим нормаль коллизии (Minimum Translation Vector)
+                        float3 normal = make_float3(0,0,0);
+                        float depth = 0.0f;
 
-                            // Для соседа (если он статический, скорость 0)
-                            float3 v_other = make_float3(0.f, 0.f, 0.f);
-                            if (other.mass > 0.0f) {
-                                v_other = make_float3(
-                                    (other.x - other.oldX) / sub_dt,
-                                    (other.y - other.oldY) / sub_dt,
-                                    (other.z - other.oldZ) / sub_dt
-                                    );
-                            }
-
-                            float3 v_rel = make_float3(v_me.x - v_other.x, v_me.y - v_other.y, v_me.z - v_other.z);
-                            float v_normal = v_rel.x * normal.x + v_rel.y * normal.y + v_rel.z * normal.z;
-
-                            // 3. Упругость (Elasticity / Restitution)
-                            // Применяем ТОЛЬКО если скорость столкновения выше порога.
-                            // Это предотвращает дрожание стека (catapult effect).
-                            // Если v_normal < 0, значит тела сближаются
-                            if (v_normal < -RESTITUTION_THRESHOLD) {
-                                float restitution = me.elasticity * other.elasticity;
-                                // Формула отскока: изменяем oldPos, чтобы solver "почувствовал" изменение скорости
-                                // Импульс скорости: j = - (1 + e) * v_normal
-                                // Мы применяем это как смещение oldPos назад
-                                float restitution_bias = -v_normal * restitution;
-
-                                velocity_bias.x += normal.x * restitution_bias;
-                                velocity_bias.y += normal.y * restitution_bias;
-                                velocity_bias.z += normal.z * restitution_bias;
-                            }
-
-                            // 4. Трение (Friction)
-                            float3 v_tangent = make_float3(
-                                v_rel.x - v_normal * normal.x,
-                                v_rel.y - v_normal * normal.y,
-                                v_rel.z - v_normal * normal.z
-                                );
-                            float friction_coeff = me.friction * other.friction;
-
-                            // Трение всегда пытается остановить тангенциальное движение
-                            velocity_bias.x += v_tangent.x * friction_coeff;
-                            velocity_bias.y += v_tangent.y * friction_coeff;
-                            velocity_bias.z += v_tangent.z * friction_coeff;
-
-                            contact_count++;
+                        if (x_overlap < y_overlap && x_overlap < z_overlap) {
+                            normal = make_float3(diff.x > 0 ? 1 : -1, 0, 0);
+                            depth = x_overlap;
+                        } else if (y_overlap < z_overlap) {
+                            normal = make_float3(0, diff.y > 0 ? 1 : -1, 0);
+                            depth = y_overlap;
+                        } else {
+                            normal = make_float3(0, 0, diff.z > 0 ? 1 : -1);
+                            depth = z_overlap;
                         }
+
+
+                        // PBD Mass weighting
+                        float w1 = 1.0f / me.mass;
+                        float w2 = (other.mass > 0.0f) ? (1.0f / other.mass) : 0.0f;
+
+
+                        float wSum = w1 + w2;
+                        if (wSum < EPSILON) continue;
+
+                        // --- Contact Constraint solving ---
+                        // Коррекция позиции, чтобы разделить объекты
+                        float3 deltaX = normal * (depth * (w1 / wSum));
+
+                        // --- Friction ---
+                        // Трение в PBD делается на уровне позиций.
+                        // 1. Вычисляем смещение относительно предыдущего кадра
+                        float3 pos_star_i = pos + deltaX;
+                        float3 pos_star_j = otherPos; // Упрощение: считаем соседа зафиксированным (Jacobi style)
+
+                        // 2. Вектор полного перемещения за шаг (относительная скорость * dt)
+                        // Формула: (x*_i - x_old_i) - (x*_j - x_old_j)
+                        float3 curr_disp = (pos_star_i - originalPos) - (pos_star_j - make_float3(other.oldX, other.oldY, other.oldZ));
+
+                        // 3. Тангенциальная составляющая (проекция скорости на плоскость касания)
+                        float disp_normal_projection = dot(curr_disp, normal);
+                        float3 disp_tangent = curr_disp - normal * disp_normal_projection; // Убираем нормаль
+                        float disp_len = length(disp_tangent);
+
+                        if (disp_len > EPSILON) {
+                            // Используем средний коэффициент трения
+                            float mu = 0.5f * (me.friction + other.friction);
+
+                            // В PBD сила нормальной реакции пропорциональна глубине проникновения (depth).
+                            // Закон Кулона: F_friction <= mu * F_normal  =>  Delta_friction <= mu * depth
+                            float max_friction_displacement = mu * depth;
+
+                            float3 frictionDelta;
+
+                            if (disp_len < max_friction_displacement) {
+                                // --- Static Friction (Трение покоя) ---
+                                frictionDelta = disp_tangent * -1.0f;
+                            } else {
+                                // --- Kinetic Friction (Трение скольжения) ---
+                                frictionDelta = disp_tangent * -(max_friction_displacement / disp_len);
+                            }
+
+                            // 4. Применяем трение с учетом веса частицы (Inverse Mass)
+                            // w1 = 1/m1, wSum = 1/m1 + 1/m2
+                            deltaX = deltaX + frictionDelta * (w1 / wSum);
+                        }
+
+                        totalDelta = totalDelta + deltaX;
+                        constraintCount++;
                     }
                 }
             }
         }
     }
 
-    if (contact_count > 0) {
-        // Усреднение коррекций - важно для стабильности, когда контактов много
-        float inv_contact = 1.0f / (float)contact_count;
+    // Применяем усредненную коррекцию (Averaging / Relaxation)
+    if (constraintCount > 0) {
+        // Деление на кол-во констрейнтов делает систему стабильнее (Jacobi Averaging)
+        // Можно добавить SOR factor (omega) около 1.0 - 1.2 для скорости сходимости
+        float omega = 1.2f;
+        float factor = omega / (float)constraintCount;
 
-        // Применяем выталкивание к текущей позиции
-        me.x += pos_correction.x * inv_contact;
-        me.y += pos_correction.y * inv_contact;
-        me.z += pos_correction.z * inv_contact;
+        me.x += totalDelta.x * factor;
+        me.y += totalDelta.y * factor;
+        me.z += totalDelta.z * factor;
 
-        // Применяем отскок и трение к OLD позиции.
-        // PBD трюк: изменение oldPos напрямую влияет на вычисленную скорость на следующем шаге.
-        // x_new не меняем (чтобы не нарушить контакт), а old_x сдвигаем так,
-        // чтобы вектор (x_new - x_old) стал нужной нам скоростью отскока.
-        me.oldX -= velocity_bias.x * inv_contact * sub_dt;
-        me.oldY -= velocity_bias.y * inv_contact * sub_dt;
-        me.oldZ -= velocity_bias.z * inv_contact * sub_dt;
+
+        if (constraintCount>1){
+            float diff = length(make_float3(me.x - me.oldX, me.y - me.oldY, me.z - me.oldZ));
+            if (diff < 0.001f) {
+                me.x = me.oldX;
+                me.y = me.oldY;
+                me.z = me.oldZ;
+            }
+        }
 
         voxels[idx] = me;
     }
 }
 
+// ------------------------------------------------------------------
 // 3. VELOCITY UPDATE
-__global__ void updateVelocitiesKernel(CudaVoxel* voxels, int count, float sub_dt) {
+// v = (x* - x_prev) / dt
+// ------------------------------------------------------------------
+__global__ void updateVelocitiesKernel(CudaVoxel* voxels, int count, float dt, float damping) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= count) return;
 
     CudaVoxel v = voxels[idx];
-    if (v.mass == 0.0f) {
-        // Для статики обнуляем всё явно, на всякий случай
+    if (v.mass <= 0.0f) {
         v.vx = 0; v.vy = 0; v.vz = 0;
         voxels[idx] = v;
         return;
     }
 
-    // PBD Velocity update: v = (x - oldX) / dt
-    // Благодаря правкам oldX в солвере, здесь уже учтен отскок.
-    v.vx = (v.x - v.oldX) / sub_dt;
-    v.vy = (v.y - v.oldY) / sub_dt;
-    v.vz = (v.z - v.oldZ) / sub_dt;
+    // PBD Velocity update
+    // Скорость автоматически включает в себя отскок и внешние силы,
+    // так как x изменился в процессе решения констрейнтов.
+    float3 newVel;
+    newVel.x = (v.x - v.oldX) / dt;
+    newVel.y = (v.y - v.oldY) / dt;
+    newVel.z = (v.z - v.oldZ) / dt;
 
-    // Небольшое глобальное затухание для стабильности
-    const float global_damping = 0.9999f;
-    v.vx *= global_damping;
-    v.vy *= global_damping;
-    v.vz *= global_damping;
+    // Apply Damping (Global)
+    newVel = newVel * damping;
+
+    v.vx = newVel.x;
+    v.vy = newVel.y;
+    v.vz = newVel.z;
 
     voxels[idx] = v;
 }
 
-extern "C" {
-void launch_updatePhysicsPBD(CudaVoxel* d_voxels, unsigned int numVoxels, float dt, unsigned int substeps,
-                             unsigned int* d_gridParticleHash, unsigned int* d_gridParticleIndex,
-                             unsigned int* d_cellStart, unsigned int* d_cellEnd, unsigned int gridSize, float cellSize) {
+// --- LAUNCHERS ---
 
-    if (numVoxels == 0) return;
+extern "C" {
+void launch_predictPositions(CudaVoxel* d_voxels, size_t numVoxels, float dt, float gravity) {
     int threads = 256;
     int blocks = (numVoxels + threads - 1) / threads;
-    float sub_dt = dt / (float)substeps;
-    float gravityY = -9.81f;
-
-    for (unsigned int s = 0; s < substeps; s++) {
-        predictPositionsKernel<<<blocks, threads>>>(d_voxels, numVoxels, sub_dt, gravityY);
-        solveConstraintsKernel<<<blocks, threads>>>(d_voxels, numVoxels, d_gridParticleIndex, d_cellStart, d_cellEnd, gridSize, cellSize, sub_dt);
-        updateVelocitiesKernel<<<blocks, threads>>>(d_voxels, numVoxels, sub_dt);
-    }
+    predictPositionsKernel<<<blocks, threads>>>(d_voxels, numVoxels, dt, gravity);
 }
 
-} // extern "C"
+void launch_solveCollisionsPBD(
+    CudaVoxel* d_voxels, unsigned int numVoxels,
+    unsigned int* d_gridParticleIndex, unsigned int* d_cellStart, unsigned int* d_cellEnd,
+    unsigned int gridSize, float cellSize, float dt)
+{
+    int threads = 256;
+    int blocks = (numVoxels + threads - 1) / threads;
+    solveCollisionsPBDKernel<<<blocks, threads>>>(
+        d_voxels, numVoxels, d_gridParticleIndex, d_cellStart, d_cellEnd,
+        gridSize, cellSize, dt
+        );
+}
+
+void launch_updateVelocities(CudaVoxel* d_voxels, size_t numVoxels, float dt, float damping) {
+    int threads = 256;
+    int blocks = (numVoxels + threads - 1) / threads;
+    updateVelocitiesKernel<<<blocks, threads>>>(d_voxels, numVoxels, dt, damping);
+}
+}
