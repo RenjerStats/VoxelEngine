@@ -227,10 +227,16 @@ __global__ void updateVelocitiesKernel(CudaVoxel* voxels, int count, float dt, f
     // PBD Velocity update
     // Скорость автоматически включает в себя отскок и внешние силы,
     // так как x изменился в процессе решения констрейнтов.
+
     float3 newVel;
     newVel.x = (v.x - v.oldX) / dt;
     newVel.y = (v.y - v.oldY) / dt;
     newVel.z = (v.z - v.oldZ) / dt;
+
+
+    if (newVel.y * v.vy < -EPSILON){
+        newVel.y *= 0.01; // предотвращает эффект катапульты у столбиков вокселей
+    }
 
     // Apply Damping (Global)
     newVel = newVel * damping;

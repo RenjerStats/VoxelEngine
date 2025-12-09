@@ -33,7 +33,7 @@ void launch_solveCollisionsPBD(
     unsigned int* d_cellEnd,
     unsigned int gridSize,
     float cellSize,
-    float dt // Нужно для расчета трения
+    float dt
     );
 
 // 4. Обновление скоростей (Velocity Update)

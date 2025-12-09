@@ -89,7 +89,7 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability)
     int solverIterations = 2;
 
     m_spatialHash->resize(countVoxels);
-    float gravity = -9.8f;
+    float gravity = -15.8f;
     float damping = 0.9999f; // Глобальное затухание
 
     // --- MAIN PBD LOOP ---
@@ -123,6 +123,8 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability)
                 subDt
                 );
         }
+
+
 
         // 4. Velocity Update (v = (x* - x_old) / dt)
         launch_updateVelocities(d_voxels, countVoxels, subDt, damping);
