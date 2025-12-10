@@ -1,3 +1,5 @@
+#pragma once
+
 struct CudaVoxel {      //offsets
     float x, y, z;      // 0, 4, 8 bytes
     float vx, vy, vz;   // 12, 16, 20 bytes

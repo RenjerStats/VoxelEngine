@@ -56,7 +56,7 @@ void MainWindow::setupUI() {
 
     // Создаем окно рендеринга (оно нужно нам для замыканий в лямбдах)
     voxelWindow = new VoxelWindow();
-    voxelWindow->setScenePath("assets/monu2.vox");
+    voxelWindow->setScenePath("assets/test4.vox");
 
     // --- 1. Слайдер FOV (Field of View) ---
     // Диапазон: 10..120 градусов

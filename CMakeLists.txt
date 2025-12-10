@@ -11,6 +11,7 @@ find_package(CUDAToolkit REQUIRED)
 find_package(OpenGL REQUIRED)
 
 add_definitions(-DQT_NO_KEYWORDS) # пришлось использовать, так как KEYWORDS конфликтуют с библиотекой ogt_vox
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lineinfo") # для отладки cuda в Nsight
 
 set(HEADERS
     include/Application.h

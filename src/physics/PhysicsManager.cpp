@@ -26,17 +26,30 @@ PhysicsManager::~PhysicsManager() {
 
 void PhysicsManager::freeResources()
 {
-    cuda_cleanup(cuda_vbo_resource);
-    cuda_vbo_resource = nullptr;
+
+    if (cuda_vbo_resource) {
+        cuda_cleanup(cuda_vbo_resource);
+        cuda_vbo_resource = nullptr;
+    }
+
+
+    if (d_standalone_buffer) {
+        cudaFree(d_standalone_buffer);
+        d_standalone_buffer = nullptr;
+    }
+
     m_spatialHash.reset();
 }
 
 PhysicsManager::PhysicsManager(PhysicsManager&& other) noexcept
     : cuda_vbo_resource(other.cuda_vbo_resource),
+    d_standalone_buffer(other.d_standalone_buffer),
     frameRate(other.frameRate),
     countVoxels(other.countVoxels),
-    m_spatialHash(std::move(other.m_spatialHash)) {
+    m_spatialHash(std::move(other.m_spatialHash))
+{
     other.cuda_vbo_resource = nullptr;
+    other.d_standalone_buffer = nullptr;
 }
 
 PhysicsManager& PhysicsManager::operator=(PhysicsManager&& other) noexcept {
@@ -44,11 +57,13 @@ PhysicsManager& PhysicsManager::operator=(PhysicsManager&& other) noexcept {
         freeResources();
 
         cuda_vbo_resource = other.cuda_vbo_resource;
+        d_standalone_buffer = other.d_standalone_buffer;
         frameRate = other.frameRate;
         countVoxels = other.countVoxels;
         m_spatialHash = std::move(other.m_spatialHash);
 
         other.cuda_vbo_resource = nullptr;
+        other.d_standalone_buffer = nullptr;
     }
     return *this;
 }
@@ -56,7 +71,29 @@ PhysicsManager& PhysicsManager::operator=(PhysicsManager&& other) noexcept {
 
 void PhysicsManager::registerVoxelSharedBuffer(unsigned int vboID)
 {
+    if (d_standalone_buffer) { cudaFree(d_standalone_buffer); d_standalone_buffer = nullptr; }
     cuda_registerGLBuffer(vboID, &cuda_vbo_resource);
+}
+
+void PhysicsManager::uploadVoxelsToGPU(const std::vector<CudaVoxel>& voxels) {
+    if (cuda_vbo_resource) {
+        // Если был GL ресурс, освобождаем
+        cuda_cleanup(cuda_vbo_resource);
+        cuda_vbo_resource = nullptr;
+    }
+
+    countVoxels = voxels.size();
+    if (countVoxels == 0) return;
+
+    // Выделяем память напрямую через CUDA
+    cudaError_t err = cudaMalloc((void**)&d_standalone_buffer, countVoxels * sizeof(CudaVoxel));
+    if (err != cudaSuccess) {
+        qCritical() << "CUDA Malloc failed:" << cudaGetErrorString(err);
+        return;
+    }
+
+    // Копируем данные
+    cudaMemcpy(d_standalone_buffer, voxels.data(), countVoxels * sizeof(CudaVoxel), cudaMemcpyHostToDevice);
 }
 
 void PhysicsManager::initSumulation(bool withVoxelConnection, bool withVoxelCollision)
@@ -70,11 +107,18 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability)
 
     CudaVoxel* d_voxels;
     size_t num_bytes;
+    bool usingGL = cuda_vbo_resource != nullptr;
 
-    cudaError_t err = cudaGraphicsMapResources(1, &cuda_vbo_resource, 0);
-    if (err != cudaSuccess) return;
 
-    cudaGraphicsResourceGetMappedPointer((void**)&d_voxels , &num_bytes, cuda_vbo_resource);
+    if (usingGL) {
+        cudaError_t err = cudaGraphicsMapResources(1, &cuda_vbo_resource, 0);
+        if (err != cudaSuccess) return;
+        cudaGraphicsResourceGetMappedPointer((void**)&d_voxels , &num_bytes, cuda_vbo_resource);
+    } else if (d_standalone_buffer) {
+        d_voxels = d_standalone_buffer;
+    } else {
+        return;
+    }
 
 
     float fixedDt = 1.0f / (float)frameRate;
@@ -130,5 +174,7 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability)
         launch_updateVelocities(d_voxels, countVoxels, subDt, damping);
     }
 
-    cudaGraphicsUnmapResources(1, &cuda_vbo_resource, 0);
+    if (usingGL) {
+        cudaGraphicsUnmapResources(1, &cuda_vbo_resource, 0);
+    }
 }

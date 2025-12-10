@@ -4,6 +4,8 @@
 #include <device_launch_parameters.h>
 #include <math.h>
 
+#include <nvtx3/nvToolsExt.h>
+
 __device__ inline float3 operator+(const float3& a, const float3& b) { return make_float3(a.x + b.x, a.y + b.y, a.z + b.z); }
 __device__ inline float3 operator-(const float3& a, const float3& b) { return make_float3(a.x - b.x, a.y - b.y, a.z - b.z); }
 __device__ inline float3 operator*(const float3& a, float b) { return make_float3(a.x * b, a.y * b, a.z * b); }
@@ -30,7 +32,6 @@ __device__ inline int getGridHash(int gridPos_x, int gridPos_y, int gridPos_z, i
 __global__ void predictPositionsKernel(CudaVoxel* voxels, int count, float dt, float gravity) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= count) return;
-
     CudaVoxel v = voxels[idx];
 
     // Сохраняем предыдущую позицию для Velocity Update в конце шага
@@ -235,7 +236,7 @@ __global__ void updateVelocitiesKernel(CudaVoxel* voxels, int count, float dt, f
 
 
     if (newVel.y * v.vy < -EPSILON){
-        newVel.y *= 0.01; // предотвращает эффект катапульты у столбиков вокселей
+        newVel.y *= 0.0; // предотвращает эффект катапульты у столбиков вокселей
     }
 
     // Apply Damping (Global)
@@ -264,10 +265,14 @@ void launch_solveCollisionsPBD(
 {
     int threads = 256;
     int blocks = (numVoxels + threads - 1) / threads;
+    nvtxRangePushA("Frame Render");
+
     solveCollisionsPBDKernel<<<blocks, threads>>>(
         d_voxels, numVoxels, d_gridParticleIndex, d_cellStart, d_cellEnd,
         gridSize, cellSize, dt
         );
+
+    nvtxRangePop();
 }
 
 void launch_updateVelocities(CudaVoxel* d_voxels, size_t numVoxels, float dt, float damping) {
