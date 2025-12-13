@@ -29,6 +29,7 @@ set(HEADERS
     include/cuda/KernelLauncher.h
     include/cuda/CudaInitializer.h
     include/cuda/SpatialHash.h
+    include/cuda/ClusterManager.h
     # Rendering
     include/rendering/VoxelRenderer.h
     include/rendering/GLCudaInterop.h
@@ -42,7 +43,7 @@ set(HEADERS
 
 set(SOURCES
     src/main.cpp
-    src/Application.cpp
+
     # Core
     src/core/Types.cpp
     src/core/Logger.cpp
@@ -63,12 +64,14 @@ set(SOURCES
 )
 
 set(CUDA_SOURCES
-    src/cuda/Gravity.cu
+    src/cuda/SortVoxelsInMemory.cu
     src/cuda/SpatialHash.cu
-    src/cuda/FloorCollision.cu
+    src/cuda/InitFromOpenGL.cu
     src/cuda/VoxelCollision.cu
-    src/cuda/VoxelSortByY.cu
+    src/cuda/CopyToOpenGL.cu
     src/cuda/CudaInitializer.cu
+    src/cuda/ClusterLogic.cu
+    src/cuda/Connectivity.cu
 )
 
 set(RESOURCES

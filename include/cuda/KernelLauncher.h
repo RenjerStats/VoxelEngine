@@ -1,20 +1,63 @@
 #pragma once
 
-struct CudaVoxel;
+struct float3;
+struct RenderVoxel;
 
 extern "C" {
 
-// 1. Интеграция и предсказание позиции (на основе гравитации и скорости)
+void launch_findConnectedComponents(
+    const float* posX, const float* posY, const float* posZ,
+    const float* mass,
+    int* clusterID,
+    const unsigned int* cellStart, const unsigned int* cellEnd,
+    unsigned int gridSize, float cellSize,
+    unsigned int numVoxels
+    );
+
+
+void launch_initClusterState(
+    float* posX, float* posY, float* posZ,
+    const float* mass,
+    int* clusterID,
+    float* restOffsetX, float* restOffsetY, float* restOffsetZ,
+    float3* clusterCM, float* clusterMass,
+    unsigned int numVoxels
+    );
+
+void launch_shapeMatchingStep(
+    float* posX, float* posY, float* posZ,
+    const float* mass,
+    int* clusterID,
+    float* restOffsetX, float* restOffsetY, float* restOffsetZ,
+    float3* clusterCM, float* clusterMass, float* clusterMatrixA, float* clusterRot,
+    unsigned int numVoxels,
+    unsigned int maxClusters,
+    float stiffness
+    );
+
+void launch_initSoAFromGL(
+    const RenderVoxel* OpenGLVoxels,
+    float* posX, float* posY, float* posZ,
+    float* oldX, float* oldY, float* oldZ,
+    float* velX, float* velY, float* velZ,
+    float* mass, float* friction, unsigned int* d_colorID,
+    unsigned int countVoxels
+    );
+
 void launch_predictPositions(
-    CudaVoxel* d_voxels,
+    float* posX, float* posY, float* posZ,
+    float* oldX, float* oldY, float* oldZ,
+    float* velX, float* velY, float* velZ,
+    float* mass,
     size_t numVoxels,
     float dt,
     float gravity
     );
 
-// 2. Построение хеша (оставляем вашу функцию, она подходит)
 void launch_buildSpatialHash(
-    CudaVoxel* d_voxels,
+    const float* d_posX,
+    const float* d_posY,
+    const float* d_posZ,
     unsigned int numVoxels,
     unsigned int* d_gridParticleHash,
     unsigned int* d_gridParticleIndex,
@@ -24,11 +67,31 @@ void launch_buildSpatialHash(
     float cellSize
     );
 
-// 3. Решение констрейнтов (столкновения + трение)
-void launch_solveCollisionsPBD(
-    CudaVoxel* d_voxels,
+void launch_sortVoxels(
     unsigned int numVoxels,
-    unsigned int* d_gridParticleIndex,
+    const unsigned int* sortedIndices,
+    const float* inPX, const float* inPY, const float* inPZ,
+    const float* inOX, const float* inOY, const float* inOZ,
+    const float* inVX, const float* inVY, const float* inVZ,
+    const float* inMass, const float* inFric, const unsigned int* inColor,
+
+    const int* inClusterID,
+    const float* inOffX, const float* inOffY, const float* inOffZ,
+
+    float* outPX, float* outPY, float* outPZ,
+    float* outOX, float* outOY, float* outOZ,
+    float* outVX, float* outVY, float* outVZ,
+    float* outMass, float* outFric, unsigned int* outColor,
+
+    int* outClusterID,
+    float* outOffX, float* outOffY, float* outOffZ
+    );
+
+void launch_solveCollisionsPBD(
+    float* posX, float* posY, float* posZ,
+    float* oldX, float* oldY, float* oldZ,
+    float* mass, float* friction, int* clusterID,
+    unsigned int numVoxels,
     unsigned int* d_cellStart,
     unsigned int* d_cellEnd,
     unsigned int gridSize,
@@ -36,12 +99,23 @@ void launch_solveCollisionsPBD(
     float dt
     );
 
-// 4. Обновление скоростей (Velocity Update)
 void launch_updateVelocities(
-    CudaVoxel* d_voxels,
+    float* posX, float* posY, float* posZ,
+    float* oldX, float* oldY, float* oldZ,
+    float* velX, float* velY, float* velZ,
+    float* mass,
     size_t numVoxels,
     float dt,
     float damping
+    );
+
+void launch_copyDataToOpenGL(
+    RenderVoxel* d_renderBuffer,
+    const float* d_posX,
+    const float* d_posY,
+    const float* d_posZ,
+    const unsigned int* d_colorID,
+    unsigned int numVoxels
     );
 
 }

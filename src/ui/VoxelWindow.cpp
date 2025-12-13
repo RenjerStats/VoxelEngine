@@ -84,15 +84,15 @@ void VoxelWindow::initializeGL() {
     vbo.bind();
 
     // Настраиваем layout один раз. Данные зальем позже, но формат опишем сейчас.
-    int stride = sizeof(CudaVoxel);
+    int stride = sizeof(RenderVoxel);
 
     // Attribute 0: Position (offset 0)
     program.enableAttributeArray(0);
     program.setAttributeBuffer(0, GL_FLOAT, 0, 3, stride);
 
-    // Attribute 1: ColorID (offset 36)
+    // Attribute 1: ColorID (offset 12)
     program.enableAttributeArray(1);
-    program.setAttributeBuffer(1, GL_FLOAT, 36, 1, stride);
+    program.setAttributeBuffer(1, GL_FLOAT, 12, 1, stride);
 
     vbo.release();
     vao.release();
@@ -173,28 +173,24 @@ void VoxelWindow::loadScene() {
 
     // Загружаем данные в УЖЕ СОЗДАННЫЙ VBO
     vbo.bind();
-    vbo.allocate(hostCudaVoxels.data(), voxelCount * sizeof(CudaVoxel));
+    vbo.allocate(hostCudaVoxels.data(), voxelCount * sizeof(RenderVoxel));
     vbo.release();
 
     // Палитра: Очищаем старую
     if (paletteTexture) {
-        paletteTexture->destroy(); // Освобождаем GL-ресурсы
+        paletteTexture->destroy();
         delete paletteTexture;
         paletteTexture = nullptr;
     }
 
-    // Создаём новую текстуру АВТОМАТИЧЕСКИ из QImage
+    // Создаём новую текстуру
     paletteTexture = new QOpenGLTexture(palImage);
-
-    // Настройки (ПОСЛЕ создания)
     paletteTexture->setMinificationFilter(QOpenGLTexture::Nearest);
     paletteTexture->setMagnificationFilter(QOpenGLTexture::Nearest);
     paletteTexture->setWrapMode(QOpenGLTexture::ClampToEdge);
 
     physicsManager = PhysicsManager(60, voxelCount);
-    physicsManager.registerVoxelSharedBuffer(vbo.bufferId());
-    physicsManager.initSumulation();
-
+    physicsManager.connectToOpenGL(vbo.bufferId());
 
     // Запускаем перерисовку
     requestUpdate();
@@ -232,7 +228,7 @@ void VoxelWindow::calculateCenterOfModel()
         float sizeX = maxX - minX;
         float sizeY = maxY - minY;
 
-        // Берем максимальную сторону и умножаем на 1.5, чтобы модель влезла в экран
+        // Берем максимальную сторону и умножаем на 1.2, чтобы модель влезла в экран
         float maxDim = std::max({sizeX, sizeY});
         distanceToModel = maxDim * 1.2f;
         lightBoxScale = distanceToModel;
@@ -249,19 +245,18 @@ void VoxelWindow::resetSimulation(){
     physicsManager.freeResources();
 
     vbo.bind();
-    vbo.write(0, hostCudaVoxels.data(), hostCudaVoxels.size() * sizeof(CudaVoxel));
+    vbo.write(0, hostCudaVoxels.data(), hostCudaVoxels.size() * sizeof(RenderVoxel));
     vbo.release();
 
-    physicsManager.registerVoxelSharedBuffer(vbo.bufferId());
-    physicsManager.initSumulation();
+    physicsManager = PhysicsManager(60, hostCudaVoxels.size());
+
+    physicsManager.connectToOpenGL(vbo.bufferId());
 
     requestUpdate();
 }
 
 
-void VoxelWindow::resizeGL(int w, int h) {
-    // Обновляем матрицу проекции в шейдере, если нужно
-}
+void VoxelWindow::resizeGL(int w, int h) {}
 
 void VoxelWindow::setFOV(float val) { m_fov = val; } // update вызывается таймером, но можно добавить update()
 void VoxelWindow::setDistance(float val) { distanceToModel = val; }

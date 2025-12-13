@@ -1,5 +1,4 @@
 #include "cuda/CudaInitializer.h"
-#include "core/Types.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

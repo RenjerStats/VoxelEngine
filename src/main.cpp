@@ -1,6 +1,7 @@
 #include <QDebug>
 #include <vector>
-#define NSIGHT_DEBUG
+
+//#define NSIGHT_DEBUG
 
 #ifdef NSIGHT_DEBUG
 // --- HEADLESS MODE ---
@@ -14,13 +15,11 @@
 using namespace VoxIO;
 
 int main(int argc, char *argv[]) {
-    // В этом режиме мы НЕ создаем QApplication, чтобы избежать инициализации OpenGL контекста
-
     std::cout << ">>> NSIGHT COMPUTE DEBUG MODE ENABLED <<<" << std::endl;
     std::cout << ">>> NO GUI / NO OPENGL INTEROP <<<" << std::endl;
 
     // 1. Загрузка данных (путь хардкодим или берем из argv)
-    QString scenePath = "assets/test4.vox";
+    QString scenePath = "assets/test5.vox";
     std::cout << "Loading scene: " << scenePath.toStdString() << std::endl;
 
     auto scene = VoxFileParser::load(scenePath);
@@ -31,7 +30,7 @@ int main(int argc, char *argv[]) {
 
     // Извлекаем воксели (как в VoxelWindow::loadScene)
     VoxModel model = scene->getModel(0);
-    std::vector<CudaVoxel> hostVoxels = model.getCudaVoxels();
+    std::vector<RenderVoxel> hostVoxels = model.getCudaVoxels();
     std::cout << "Loaded voxels: " << hostVoxels.size() << std::endl;
 
     // 2. Инициализация физики
@@ -39,11 +38,10 @@ int main(int argc, char *argv[]) {
 
     // ВАЖНО: Используем новый метод загрузки, минуя VBO
     physics.uploadVoxelsToGPU(hostVoxels);
-    physics.initSumulation();
 
     // 3. Цикл симуляции
     // Запускаем фиксированное количество кадров, чтобы профайлер мог собрать статистику
-    int totalFrames = 100;
+    int totalFrames = 600;
     std::cout << "Starting simulation for " << totalFrames << " frames..." << std::endl;
 
     for (int i = 0; i < totalFrames; ++i) {

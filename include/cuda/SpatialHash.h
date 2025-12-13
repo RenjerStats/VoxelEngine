@@ -3,12 +3,11 @@
 
 class SpatialHash {
 public:
-    SpatialHash(unsigned int gridSize = 256*256, float cellSize = 1.05f)
+    SpatialHash(unsigned int gridSize = 256*256*64, float cellSize = 1.05f)
         : m_numVoxels(0), m_gridSize(gridSize), m_cellSize(cellSize),
         d_gridParticleHash(nullptr), d_gridParticleIndex(nullptr),
         d_cellStart(nullptr), d_cellEnd(nullptr)
     {
-        // Выделяем память под фиксированную таблицу ячеек сразу
         cudaMalloc((void**)&d_cellStart, m_gridSize * sizeof(unsigned int));
         cudaMalloc((void**)&d_cellEnd, m_gridSize * sizeof(unsigned int));
     }
@@ -19,8 +18,6 @@ public:
         if (d_cellStart) cudaFree(d_cellStart);
         if (d_cellEnd) cudaFree(d_cellEnd);
     }
-
-    // Пересоздание буферов, если изменилось количество частиц
     void resize(unsigned int numVoxels){
         if (m_numVoxels == numVoxels) return;
 
@@ -35,7 +32,6 @@ public:
         }
     }
 
-    // Геттеры для передачи данных в кернелы (PhysicsManager'у)
     unsigned int* getGridParticleHash() const { return d_gridParticleHash; }
     unsigned int* getGridParticleIndex() const { return d_gridParticleIndex; }
     unsigned int* getCellStart() const { return d_cellStart; }
@@ -49,7 +45,6 @@ private:
     unsigned int m_gridSize;
     float m_cellSize;
 
-    // GPU буферы
     unsigned int* d_gridParticleHash = nullptr;
     unsigned int* d_gridParticleIndex = nullptr;
     unsigned int* d_cellStart = nullptr;

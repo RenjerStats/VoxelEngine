@@ -11,7 +11,7 @@
 #include <QTimer>
 #include <vector>
 
-struct CudaVoxel;
+struct RenderVoxel;
 
 class VoxelWindow : public QOpenGLWindow, protected QOpenGLFunctions_4_5_Core
 {Q_OBJECT
@@ -65,7 +65,7 @@ private:
     QTimer* timer = nullptr;
 
     // Данные сцены
-    std::vector<CudaVoxel> hostCudaVoxels;
+    std::vector<RenderVoxel> hostCudaVoxels;
     int voxelCount = 0;
     QString scenePath;
 

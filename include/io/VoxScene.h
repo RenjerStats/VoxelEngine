@@ -7,7 +7,7 @@
 
 #include "ogt_vox.h"
 
-struct CudaVoxel;
+struct RenderVoxel;
 
 namespace VoxIO {
 
@@ -38,7 +38,7 @@ public:
 
     std::vector<Voxel> getSolidVoxels() const;
 
-    std::vector<CudaVoxel> getCudaVoxels() const;
+    std::vector<RenderVoxel> getCudaVoxels() const;
 
     const ogt_vox_palette& getPalette() const { return palette; }
 
