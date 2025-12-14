@@ -10,11 +10,16 @@ static constexpr float kMaxDeltaSM   = 0.5f;
 __device__ inline float3 operator+(const float3& a, const float3& b) { return make_float3(a.x + b.x, a.y + b.y, a.z + b.z); }
 __device__ inline float3 operator-(const float3& a, const float3& b) { return make_float3(a.x - b.x, a.y - b.y, a.z - b.z); }
 __device__ inline float3 operator*(const float3& a, float b) { return make_float3(a.x * b, a.y * b, a.z * b); }
+__device__ inline float3 to_float3(const double3& d) {return make_float3((float)d.x, (float)d.y, (float)d.z);}
 
-__device__ inline void atomicAddFloat3(float3* address, float3 val) {
-    atomicAdd(&address->x, val.x);
-    atomicAdd(&address->y, val.y);
-    atomicAdd(&address->z, val.z);
+__device__ inline double3 operator+(const double3& a, const double3& b) { return make_double3(a.x + b.x, a.y + b.y, a.z + b.z); }
+__device__ inline double3 operator-(const double3& a, const double3& b) { return make_double3(a.x - b.x, a.y - b.y, a.z - b.z); }
+__device__ inline double3 operator*(const double3& a, double b) { return make_double3(a.x * b, a.y * b, a.z * b); }
+
+__device__ inline void atomicAddDouble3(double3* addressBase, float3 val) {
+    atomicAdd(&addressBase->x, (double)val.x);
+    atomicAdd(&addressBase->y, (double)val.y);
+    atomicAdd(&addressBase->z, (double)val.z);
 }
 
 
@@ -56,7 +61,7 @@ __global__ void initClusterStateKernel(
     const float* mass,
     const int* clusterID,
     float* restOffsetX, float* restOffsetY, float* restOffsetZ,
-    float3* clusterCM, float* clusterMass,
+    double3* clusterCM, float* clusterMass,
     unsigned int numVoxels
     ) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -67,17 +72,16 @@ __global__ void initClusterStateKernel(
 
     float3 p = make_float3(posX[idx], posY[idx], posZ[idx]);
 
-    atomicAddFloat3(&clusterCM[cID], p * mass[idx]);
+    atomicAddDouble3(&clusterCM[cID], p * mass[idx]);
     atomicAdd(&clusterMass[cID], mass[idx]);
 }
 
 // 1.b ИНИЦИАЛИЗАЦИЯ Часть 2 (Расчет Rest Offsets)
-// Запускается после initClusterStateKernel
 __global__ void computeRestOffsetsKernel(
     const float* posX, const float* posY, const float* posZ,
     const int* clusterID,
     float* restOffsetX, float* restOffsetY, float* restOffsetZ,
-    const float3* clusterCM, const float* clusterMass,
+    const double3* clusterCM, const float* clusterMass,
     unsigned int numVoxels
     ) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -89,7 +93,7 @@ __global__ void computeRestOffsetsKernel(
     float mass = clusterMass[cID];
     if (mass <= 0) return;
 
-    float3 cm = clusterCM[cID] * (1.0f / mass);
+    float3 cm = to_float3(clusterCM[cID] * (1.0 / mass));
     float3 p = make_float3(posX[idx], posY[idx], posZ[idx]);
 
     // r_i = x_i - x_cm0
@@ -106,13 +110,13 @@ __global__ void computeRestOffsetsKernel(
 
 // Шаг 1: Очистка аккумуляторов кластера (CM, Mass, Matrix A)
 __global__ void clearClusterAccumulatorsKernel(
-    float3* clusterCM, float* clusterMass, float* clusterMatrixA,
+    double3* clusterCM, float* clusterMass, float* clusterMatrixA,
     int numClusters
     ) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= numClusters) return;
 
-    clusterCM[idx] = make_float3(0,0,0);
+    clusterCM[idx] = make_double3(0,0,0);
     clusterMass[idx] = 0.0f;
 
     int matIdx = idx * 9;
@@ -123,7 +127,7 @@ __global__ void clearClusterAccumulatorsKernel(
 __global__ void calcClusterCMKernel(
     const float* posX, const float* posY, const float* posZ,
     const float* mass, const int* clusterID,
-    float3* clusterCM, float* clusterMass,
+    double3* clusterCM, float* clusterMass,
     unsigned int numVoxels
     ) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -135,7 +139,7 @@ __global__ void calcClusterCMKernel(
     float m = mass[idx];
     float3 p = make_float3(posX[idx], posY[idx], posZ[idx]);
 
-    atomicAddFloat3(&clusterCM[cID], p * m);
+    atomicAddDouble3(&clusterCM[cID], p * m);
     atomicAdd(&clusterMass[cID], m);
 }
 
@@ -145,7 +149,7 @@ __global__ void calcClusterCovarianceKernel(
     const float* posX, const float* posY, const float* posZ,
     const float* mass, const int* clusterID,
     const float* restOffsetX, const float* restOffsetY, const float* restOffsetZ,
-    const float3* clusterCM, const float* clusterMass,
+    const double3* clusterCM, const float* clusterMass,
     float* clusterMatrixA,
     unsigned int numVoxels
     ) {
@@ -159,7 +163,7 @@ __global__ void calcClusterCovarianceKernel(
     if (totalM <= 0.00001f) return;
 
     // Текущий CM
-    float3 cm = clusterCM[cID] * (1.0f / totalM);
+    float3 cm = to_float3(clusterCM[cID] * (1.0 / totalM));
     float3 p = make_float3(posX[idx], posY[idx], posZ[idx]);
     float3 q = p - cm; // Текущее смещение от центра (q)
 
@@ -167,12 +171,6 @@ __global__ void calcClusterCovarianceKernel(
     float3 r = make_float3(restOffsetX[idx], restOffsetY[idx], restOffsetZ[idx]);
 
     float m = mass[idx];
-
-    // A += m * (q * r^T) -> Outer product
-    // q * r^T =
-    // | qx*rx  qx*ry  qx*rz |
-    // | qy*rx  qy*ry  qy*rz |
-    // | qz*rx  qz*ry  qz*rz |
 
     int matIdx = cID * 9;
 
@@ -309,7 +307,7 @@ __global__ void applyShapeMatchingKernel(
     float* posX, float* posY, float* posZ,
     const int* clusterID,
     const float* restOffsetX, const float* restOffsetY, const float* restOffsetZ,
-    const float3* clusterCM, const float* clusterMass, const float* clusterRot,
+    const double3* clusterCM, const float* clusterMass, const float* clusterRot,
     unsigned int numVoxels,
     float stiffness
     ) {
@@ -322,8 +320,7 @@ __global__ void applyShapeMatchingKernel(
     float totalM = clusterMass[cID];
     if (totalM <= 0.0001f) return;
 
-    // 1. Читаем текущий CM и матрицу R
-    float3 cm = clusterCM[cID] * (1.0f / totalM);
+    float3 cm = to_float3(clusterCM[cID] * (1.0 / totalM));
     int matIdx = cID * 9;
 
     float R[9];
@@ -344,7 +341,6 @@ __global__ void applyShapeMatchingKernel(
     // 3. Коррекция (PBD)
     float3 delta = goal - curr;
 
-    // Safety-net: ограничиваем “телепорт” от shape-matching
     delta = clampDeltaLen(delta, kMaxDeltaSM);
 
     float3 nextPos = curr + delta * stiffness;
@@ -363,13 +359,13 @@ void launch_initClusterState(
     const float* mass,
     int* clusterID,
     float* restOffsetX, float* restOffsetY, float* restOffsetZ,
-    float3* clusterCM, float* clusterMass,
+    double3* clusterCM, float* clusterMass,
     unsigned int numVoxels
     ) {
     int threads = 256;
     int blocks = (numVoxels + threads - 1) / threads;
 
-    cudaMemset(clusterCM, 0, numVoxels * sizeof(float3));
+    cudaMemset(clusterCM, 0, numVoxels * sizeof(double3));
     cudaMemset(clusterMass, 0, numVoxels * sizeof(float));
 
     // Pass 1: Calc Rest CM
@@ -395,7 +391,7 @@ void launch_shapeMatchingStep(
     const float* mass,
     int* clusterID,
     float* restOffsetX, float* restOffsetY, float* restOffsetZ,
-    float3* clusterCM, float* clusterMass, float* clusterMatrixA, float* clusterRot,
+    double3* clusterCM, float* clusterMass, float* clusterMatrixA, float* clusterRot,
     unsigned int numVoxels,
     unsigned int maxClusters,
     float stiffness

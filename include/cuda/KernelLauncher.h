@@ -1,6 +1,6 @@
 #pragma once
 
-struct float3;
+struct double3;
 struct RenderVoxel;
 
 extern "C" {
@@ -20,7 +20,7 @@ void launch_initClusterState(
     const float* mass,
     int* clusterID,
     float* restOffsetX, float* restOffsetY, float* restOffsetZ,
-    float3* clusterCM, float* clusterMass,
+    double3* clusterCM, float* clusterMass,
     unsigned int numVoxels
     );
 
@@ -29,7 +29,7 @@ void launch_shapeMatchingStep(
     const float* mass,
     int* clusterID,
     float* restOffsetX, float* restOffsetY, float* restOffsetZ,
-    float3* clusterCM, float* clusterMass, float* clusterMatrixA, float* clusterRot,
+    double3* clusterCM, float* clusterMass, float* clusterMatrixA, float* clusterRot,
     unsigned int numVoxels,
     unsigned int maxClusters,
     float stiffness

@@ -30,7 +30,7 @@ public:
         cudaMalloc((void**)&d_sortedRestOffsetZ, m_numVoxels * sizeof(float));
 
         // --- Данные кластеров (не сортируются, индексируются по ID) ---
-        cudaMalloc((void**)&d_clusterCM, m_numVoxels * sizeof(float3));
+        cudaMalloc((void**)&d_clusterCM, m_numVoxels * sizeof(double3));
         cudaMalloc((void**)&d_clusterRot, m_numVoxels * 9 * sizeof(float));
         cudaMalloc((void**)&d_clusterMatrixA, m_numVoxels * 9 * sizeof(float));
         cudaMalloc((void**)&d_clusterMass, m_numVoxels * sizeof(float));
@@ -90,7 +90,7 @@ public:
     float* getSortedRestOffsetY() const { return d_sortedRestOffsetY; }
     float* getSortedRestOffsetZ() const { return d_sortedRestOffsetZ; }
 
-    float3* getClusterCM() const { return d_clusterCM; }
+    double3* getClusterCM() const { return d_clusterCM; }
     float* getClusterRot() const { return d_clusterRot; }
     float* getClusterMatrixA() const { return d_clusterMatrixA; }
     float* getClusterMass() const { return d_clusterMass; }
@@ -114,7 +114,7 @@ private:
     float* d_restOffsetZ = nullptr;
     float* d_sortedRestOffsetZ = nullptr;
 
-    float3* d_clusterCM = nullptr;
+    double3* d_clusterCM = nullptr;
     float* d_clusterRot = nullptr;
     float* d_clusterMatrixA = nullptr;
     float* d_clusterMass = nullptr;
