@@ -127,8 +127,6 @@ __global__ void compressClusterIDsKernel(int* clusterID, unsigned int* changedFl
 }
 
 
-
-
 extern "C" {
 void launch_findConnectedComponents(
     const float* posX, const float* posY, const float* posZ,

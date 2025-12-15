@@ -18,7 +18,7 @@ public:
         if (d_cellStart) cudaFree(d_cellStart);
         if (d_cellEnd) cudaFree(d_cellEnd);
     }
-    void resize(unsigned int numVoxels){
+    void initMemory(unsigned int numVoxels){
         if (m_numVoxels == numVoxels) return;
 
         if (d_gridParticleHash) cudaFree(d_gridParticleHash);
@@ -30,6 +30,29 @@ public:
             cudaMalloc((void**)&d_gridParticleHash, m_numVoxels * sizeof(unsigned int));
             cudaMalloc((void**)&d_gridParticleIndex, m_numVoxels * sizeof(unsigned int));
         }
+    }
+
+    void resizeMemory(unsigned int newNumVoxels) {
+
+        unsigned int oldNumVoxels = m_numVoxels;
+
+        unsigned int* old_gridParticleHash = d_gridParticleHash;
+        unsigned int* old_gridParticleIndex = d_gridParticleIndex;
+
+        m_numVoxels = newNumVoxels;
+
+        cudaMalloc((void**)&d_gridParticleHash, m_numVoxels * sizeof(unsigned int));
+        cudaMalloc((void**)&d_gridParticleIndex, m_numVoxels * sizeof(unsigned int));
+
+        if (oldNumVoxels > 0) {
+            cudaMemcpy(d_gridParticleHash, old_gridParticleHash,
+                       oldNumVoxels * sizeof(unsigned int), cudaMemcpyDeviceToDevice);
+            cudaMemcpy(d_gridParticleIndex, old_gridParticleIndex,
+                       oldNumVoxels * sizeof(unsigned int), cudaMemcpyDeviceToDevice);
+        }
+
+        if (old_gridParticleHash) cudaFree(old_gridParticleHash);
+        if (old_gridParticleIndex) cudaFree(old_gridParticleIndex);
     }
 
     unsigned int* getGridParticleHash() const { return d_gridParticleHash; }

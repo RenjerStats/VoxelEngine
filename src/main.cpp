@@ -1,6 +1,3 @@
-#include <QDebug>
-#include <vector>
-
 //#define NSIGHT_DEBUG
 
 #ifdef NSIGHT_DEBUG
@@ -11,6 +8,8 @@
 #include "core/Types.h"
 #include <cuda_runtime.h>
 #include <iostream>
+#include <vector>
+#include <QDebug>
 
 using namespace VoxIO;
 
@@ -18,7 +17,6 @@ int main(int argc, char *argv[]) {
     std::cout << ">>> NSIGHT COMPUTE DEBUG MODE ENABLED <<<" << std::endl;
     std::cout << ">>> NO GUI / NO OPENGL INTEROP <<<" << std::endl;
 
-    // 1. Загрузка данных (путь хардкодим или берем из argv)
     QString scenePath = "assets/test5.vox";
     std::cout << "Loading scene: " << scenePath.toStdString() << std::endl;
 
@@ -28,24 +26,18 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // Извлекаем воксели (как в VoxelWindow::loadScene)
     VoxModel model = scene->getModel(0);
     std::vector<RenderVoxel> hostVoxels = model.getCudaVoxels();
     std::cout << "Loaded voxels: " << hostVoxels.size() << std::endl;
 
-    // 2. Инициализация физики
     PhysicsManager physics(60, hostVoxels.size());
 
-    // ВАЖНО: Используем новый метод загрузки, минуя VBO
     physics.uploadVoxelsToGPU(hostVoxels);
 
-    // 3. Цикл симуляции
-    // Запускаем фиксированное количество кадров, чтобы профайлер мог собрать статистику
     int totalFrames = 600;
     std::cout << "Starting simulation for " << totalFrames << " frames..." << std::endl;
 
     for (int i = 0; i < totalFrames; ++i) {
-        // Параметры: speed = 1.0, stability = 1.0 (можно менять для нагрузки)
         physics.updatePhysics(1.0f, 1.0f);
 
         cudaDeviceSynchronize();
@@ -62,12 +54,37 @@ int main(int argc, char *argv[]) {
 #else
 // --- STANDARD MODE ---
 #include <QApplication>
-#include "ui/MainWindow.h"
+#include <QHBoxLayout>
+#include <QWidget>
+#include "ui/VoxelWindow.h"
+#include "ui/ControlPanel.h"
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     QApplication app(argc, argv);
-    MainWindow window;
-    window.show();
+
+    QWidget* mainWindow = new QWidget();
+    mainWindow->setWindowTitle("Voxel Engine CUDA Physics");
+    mainWindow->resize(1280, 720);
+
+    VoxelWindow* voxelWindow = new VoxelWindow();
+
+    QWidget* container = QWidget::createWindowContainer(voxelWindow);
+    container->setMinimumSize(800, 600);
+    container->setFocusPolicy(Qt::StrongFocus);
+
+    ControlPanel* controlPanel = new ControlPanel(voxelWindow);
+    controlPanel->setFixedWidth(300);
+
+    QHBoxLayout* layout = new QHBoxLayout(mainWindow);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(container, 1);
+    layout->addWidget(controlPanel, 0);
+
+    voxelWindow->setScenePath("assets/test6.vox");
+
+    mainWindow->show();
+
     return app.exec();
 }
 #endif

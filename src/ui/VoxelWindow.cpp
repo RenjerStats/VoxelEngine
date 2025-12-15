@@ -18,7 +18,6 @@ VoxelWindow::VoxelWindow(QWindow* parent)
     , sceneCenter(0.0f, 0.0f, 0.0f)
     , lightBoxScale(100)
 {
-    // Настройка формата OpenGL
     QSurfaceFormat format;
     format.setVersion(4, 5);
     format.setProfile(QSurfaceFormat::CoreProfile);
@@ -28,18 +27,18 @@ VoxelWindow::VoxelWindow(QWindow* parent)
 
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &VoxelWindow::requestUpdate);
-    timer->start(16); // Обновляем сцену каждые 16мс (~60 FPS)
+    timer->start(16);
 }
 
 VoxelWindow::~VoxelWindow() {
     makeCurrent();
 
-    // Очистка OpenGL
+
     vbo.destroy();
     vao.destroy();
     if (paletteTexture) {
-        paletteTexture->destroy(); // Освобождаем GL ресурс
-        delete paletteTexture;     // Освобождаем память CPU
+        paletteTexture->destroy();
+        delete paletteTexture;
     }
     if (depthMapFBO) glDeleteFramebuffers(1, &depthMapFBO);
     if (depthMapTexture) glDeleteTextures(1, &depthMapTexture);
@@ -59,7 +58,6 @@ void VoxelWindow::initializeGL() {
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
 
-    // --- 1. Шейдеры цвета и базового освещения ---
     if (!program.addShaderFromSourceFile(QOpenGLShader::Vertex, ":/shaders/voxel.vert") ||
         !program.addShaderFromSourceFile(QOpenGLShader::Geometry, ":/shaders/voxel.geom") ||
         !program.addShaderFromSourceFile(QOpenGLShader::Fragment, ":/shaders/voxel.frag") ||
@@ -68,7 +66,6 @@ void VoxelWindow::initializeGL() {
         return;
     }
 
-        // --- 1. Шейдеры теней ---
     if (!shadowProgram.addShaderFromSourceFile(QOpenGLShader::Vertex, ":/shaders/voxel.vert") ||
         !shadowProgram.addShaderFromSourceFile(QOpenGLShader::Geometry, ":/shaders/voxel.geom") ||
         !shadowProgram.addShaderFromSourceFile(QOpenGLShader::Fragment, ":/shaders/shadow.frag") ||
@@ -76,21 +73,17 @@ void VoxelWindow::initializeGL() {
         qCritical() << "Shadow Shader error:" << shadowProgram.log();
     }
 
-    // --- 2. Инициализация буферов (ОБЯЗАТЕЛЬНО ЗДЕСЬ) ---
     vao.create();
     vbo.create();
 
     vao.bind();
     vbo.bind();
 
-    // Настраиваем layout один раз. Данные зальем позже, но формат опишем сейчас.
     int stride = sizeof(RenderVoxel);
 
-    // Attribute 0: Position (offset 0)
     program.enableAttributeArray(0);
     program.setAttributeBuffer(0, GL_FLOAT, 0, 3, stride);
 
-    // Attribute 1: ColorID (offset 12)
     program.enableAttributeArray(1);
     program.setAttributeBuffer(1, GL_FLOAT, 12, 1, stride);
 
@@ -99,7 +92,6 @@ void VoxelWindow::initializeGL() {
 
     initShadowFBO();
 
-    // --- 3. Загрузка сцены ---
     if (!scenePath.isEmpty()) {
         loadScene();
         scenePath.clear();
@@ -108,31 +100,30 @@ void VoxelWindow::initializeGL() {
     qDebug() << "VoxelWindow Initialized. GPU:" << (const char*)glGetString(GL_RENDERER);
 }
 
+void VoxelWindow::setPaused(bool paused) {
+    if (paused) timer->stop();
+    else timer->start();
+}
+
 void VoxelWindow::initShadowFBO() {
-    // 1. Создаем Framebuffer
     glGenFramebuffers(1, &depthMapFBO);
 
-    // 2. Создаем текстуру глубины
     glGenTextures(1, &depthMapTexture);
     glBindTexture(GL_TEXTURE_2D, depthMapTexture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
                  SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
 
-    // Параметры фильтрации (важно для теней)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    // Clamp to Border (чтобы за пределами карты теней не было теней)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
-    // 3. Прикрепляем текстуру к FBO
     glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMapTexture, 0);
 
-    // Указываем, что нам не нужны цвета (только глубина)
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
 
@@ -151,14 +142,12 @@ void VoxelWindow::loadScene() {
 
     hostCudaVoxels.clear();
 
-    // Подготовка палитры (CPU)
     const ogt_vox_palette& pal = scene->palette();
     QImage palImage(256, 1, QImage::Format_RGBA8888);
     for (int i = 0; i < 256; ++i) {
         palImage.setPixelColor(i, 0, QColor(pal.color[i].r, pal.color[i].g, pal.color[i].b, pal.color[i].a));
     }
 
-    // 2. Загрузка вокселей
     if (scene->modelCount() > 0) {
         VoxModel model = scene->getModel(0);
         hostCudaVoxels = model.getCudaVoxels();
@@ -168,32 +157,52 @@ void VoxelWindow::loadScene() {
         sceneCenter = QVector3D(0, 0, 0);
     }
 
-    voxelCount = hostCudaVoxels.size();
+    unsigned int voxelCount = hostCudaVoxels.size();
     qDebug() << "Loaded voxels:" << voxelCount;
 
-    // Загружаем данные в УЖЕ СОЗДАННЫЙ VBO
+    unsigned int maxVoxels = voxelCount * 2;
+    if (maxVoxels < 1024) maxVoxels = 1024;
+
+
     vbo.bind();
-    vbo.allocate(hostCudaVoxels.data(), voxelCount * sizeof(RenderVoxel));
+    vbo.allocate(maxVoxels * sizeof(RenderVoxel));
+    if (!hostCudaVoxels.empty()) {
+        vbo.write(0, hostCudaVoxels.data(), voxelCount * sizeof(RenderVoxel));
+    }
     vbo.release();
 
-    // Палитра: Очищаем старую
     if (paletteTexture) {
         paletteTexture->destroy();
         delete paletteTexture;
         paletteTexture = nullptr;
     }
 
-    // Создаём новую текстуру
     paletteTexture = new QOpenGLTexture(palImage);
     paletteTexture->setMinificationFilter(QOpenGLTexture::Nearest);
     paletteTexture->setMagnificationFilter(QOpenGLTexture::Nearest);
     paletteTexture->setWrapMode(QOpenGLTexture::ClampToEdge);
 
-    physicsManager = PhysicsManager(60, voxelCount);
-    physicsManager.connectToOpenGL(vbo.bufferId());
+    physicsManager = PhysicsManager(60, maxVoxels);
+    physicsManager.connectToOpenGL(vbo.bufferId(), voxelCount);
+    physicsManager.setVoxelCallback([this](unsigned int newMax, unsigned int active) {
+        this->onPhysicsMemoryResize(newMax, active);
+    });
 
-    // Запускаем перерисовку
     requestUpdate();
+}
+
+void VoxelWindow::onPhysicsMemoryResize(unsigned int newMaxVoxels, unsigned int activeVoxels)
+{
+    makeCurrent();
+    qDebug() << "Resizing VBO to max voxels:" << newMaxVoxels;
+
+    vbo.bind();
+    vbo.allocate(newMaxVoxels * sizeof(RenderVoxel));
+    vbo.release();
+
+    physicsManager.updateGLResource(vbo.bufferId());
+
+    doneCurrent();
 }
 
 void VoxelWindow::calculateCenterOfModel()
@@ -217,18 +226,15 @@ void VoxelWindow::calculateCenterOfModel()
             if (v.z > maxZ) maxZ = v.z;
         }
 
-        // Центр = середина между мин. и макс. границами
         sceneCenter = QVector3D(
             (minX + maxX) / 2.0f,
             (minY + maxY) / 2.0f,
             (minZ + maxZ) / 2.0f
             );
 
-        // 2. Вычисляем размер модели (диагональ bounding box)
         float sizeX = maxX - minX;
         float sizeY = maxY - minY;
 
-        // Берем максимальную сторону и умножаем на 1.2, чтобы модель влезла в экран
         float maxDim = std::max({sizeX, sizeY});
         distanceToModel = maxDim * 1.2f;
         lightBoxScale = distanceToModel;
@@ -248,9 +254,12 @@ void VoxelWindow::resetSimulation(){
     vbo.write(0, hostCudaVoxels.data(), hostCudaVoxels.size() * sizeof(RenderVoxel));
     vbo.release();
 
-    physicsManager = PhysicsManager(60, hostCudaVoxels.size());
+    unsigned int voxelCount = hostCudaVoxels.size();
+    unsigned int maxVoxels = voxelCount * 2;
+    if (maxVoxels < 1024) maxVoxels = 1024;
 
-    physicsManager.connectToOpenGL(vbo.bufferId());
+    physicsManager = PhysicsManager(60, maxVoxels);
+    physicsManager.connectToOpenGL(vbo.bufferId(), voxelCount);
 
     requestUpdate();
 }
@@ -258,7 +267,7 @@ void VoxelWindow::resetSimulation(){
 
 void VoxelWindow::resizeGL(int w, int h) {}
 
-void VoxelWindow::setFOV(float val) { m_fov = val; } // update вызывается таймером, но можно добавить update()
+void VoxelWindow::setFOV(float val) { m_fov = val; }
 void VoxelWindow::setDistance(float val) { distanceToModel = val; }
 void VoxelWindow::setLightDirX(float x) { m_lightDir.setX(x); }
 void VoxelWindow::setLightDirY(float y) { m_lightDir.setY(y); }
@@ -268,31 +277,21 @@ void VoxelWindow::setCameraRotationY(float y) { m_cameraRotation.setY(y); }
 void VoxelWindow::setCameraRotationZ(float z) { m_cameraRotation.setZ(z); }
 
 void VoxelWindow::paintGL() {
+    physicsManager.updatePhysics(1, 1);
+
+    unsigned int voxelCount = physicsManager.getActiveVoxels();
     if (voxelCount == 0) {
-        // Просто чистим экран если пусто
         glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         return;
     }
 
-    physicsManager.updatePhysics(1, 1);
 
-    // ===========================
-    // ШАГ 0: Расчет матриц света
-    // ===========================
-    // Создаем ортогональную матрицу, охватывающую сцену
-    // Размер коробки зависит от distanceToModel (размера модели)
-    float orthoSize = lightBoxScale; // Подберите коэффициент по вкусу
+    float orthoSize = lightBoxScale;
     QMatrix4x4 lightProjection;
     lightProjection.ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 1.0f, lightBoxScale * 3.0f);
 
-    // "Виртуальная" позиция солнца. Сдвигаем от центра сцены навстречу вектору света
-    // m_lightDir у вас (0.5, 1.0, 0.3) -> свет бьет В ЭТУ сторону.
-    // Значит источник находится в противоположной стороне (sceneCenter - m_lightDir * dist)
-    // НО в voxel.frag вы используете lightDir как направление НА свет?
-    // Обычно lightDir - это направление ОТ источника. Если у вас Phong, проверьте это.
-    // Допустим m_lightDir - это вектор падения света.
-    // Позиция камеры света:
+
     QVector3D lightPos = sceneCenter + (m_lightDir.normalized() * distanceToModel * 1.5f);
 
     QMatrix4x4 lightView;
@@ -301,9 +300,7 @@ void VoxelWindow::paintGL() {
     QMatrix4x4 lightSpaceMatrix = lightProjection * lightView;
 
 
-    // ===========================
-    // ШАГ 1: Shadow Pass (Рендер в текстуру)
-    // ===========================
+
     glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
     glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
     glClear(GL_DEPTH_BUFFER_BIT);
@@ -311,29 +308,23 @@ void VoxelWindow::paintGL() {
     shadowProgram.bind();
     shadowProgram.setUniformValue("proj", lightProjection);
     shadowProgram.setUniformValue("view", lightView);
-    shadowProgram.setUniformValue("voxelSize", 1.0f); // Размер вокселя
+    shadowProgram.setUniformValue("voxelSize", 1.0f);
 
     vao.bind();
-    // Voxel.geom используется и здесь! Он сгенерирует кубы с точки зрения света.
-    // Поскольку shadow.frag пустой, запишется только глубина.
     glDrawArrays(GL_POINTS, 0, voxelCount);
     vao.release();
     shadowProgram.release();
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0); // Вернулись к экрану
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 
-    // ===========================
-    // ШАГ 2: Render Pass (Обычный рендер)
-    // ===========================
-    glViewport(0, 0, width() * devicePixelRatio(), height() * devicePixelRatio()); // Вернули вьюпорт
+    glViewport(0, 0, width() * devicePixelRatio(), height() * devicePixelRatio());
     glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     program.bind();
     vao.bind();
 
-    // Матрицы камеры (как было раньше)
     QMatrix4x4 view, proj;
     float nearPlane = 0.1f;
     float farPlane = 5000.0f;
@@ -345,32 +336,27 @@ void VoxelWindow::paintGL() {
     QVector3D orbitCamPos(camX, camY, camZ);
 
     view.lookAt(orbitCamPos, sceneCenter, QVector3D(0, 1, 0));
-    // Применяем вращение мыши
     view.translate(sceneCenter);
     view.rotate(m_cameraRotation.y(), 0, 1, 0);
     view.rotate(m_cameraRotation.x(), 1, 0, 0);
     view.rotate(m_cameraRotation.z(), 0, 0, 1);
     view.translate(-sceneCenter);
 
-    // Передаем юниформы
     program.setUniformValue("proj", proj);
     program.setUniformValue("view", view);
     program.setUniformValue("voxelSize", 1.0f);
-    program.setUniformValue("lightDir", m_lightDir); // Вектор НА свет
-    program.setUniformValue("viewPos", orbitCamPos); // Для бликов (приблизительно)
+    program.setUniformValue("lightDir", m_lightDir);
+    program.setUniformValue("viewPos", orbitCamPos);
     program.setUniformValue("shininess", 32.0f);
 
-    // ---> ВАЖНО: Передаем матрицу света для расчета проекции тени
     program.setUniformValue("lightSpaceMatrix", lightSpaceMatrix);
 
-    // Текстура палитры (Unit 0)
     if (paletteTexture) {
         glActiveTexture(GL_TEXTURE0);
         paletteTexture->bind();
         program.setUniformValue("uPalette", 0);
     }
 
-    // Текстура тени (Unit 1)
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, depthMapTexture);
     program.setUniformValue("shadowMap", 1);
@@ -378,7 +364,59 @@ void VoxelWindow::paintGL() {
     glDrawArrays(GL_POINTS, 0, voxelCount);
 
     if (paletteTexture) paletteTexture->release();
-    glBindTexture(GL_TEXTURE_2D, 0); // Unbind shadow map
+    glBindTexture(GL_TEXTURE_2D, 0);
     vao.release();
     program.release();
+}
+
+void VoxelWindow::spawnSphereFromCamera(float velocityMagnitude, unsigned size) {
+    float camX = sceneCenter.x() + distanceToModel;
+    float camZ = sceneCenter.z() + distanceToModel;
+    float camY = sceneCenter.y() + (distanceToModel * 0.3f);
+    QVector3D orbitCamPos(camX, camY, camZ);
+
+    QMatrix4x4 rotationMatrix;
+    rotationMatrix.translate(sceneCenter);
+    rotationMatrix.rotate(m_cameraRotation.y(), 0, 1, 0);
+    rotationMatrix.rotate(m_cameraRotation.x(), 1, 0, 0);
+    rotationMatrix.rotate(m_cameraRotation.z(), 0, 0, 1);
+    rotationMatrix.translate(-sceneCenter);
+
+    QVector3D cameraPosition =  rotationMatrix.inverted().map(orbitCamPos);
+    QVector3D direction = (sceneCenter - cameraPosition).normalized();
+
+    float vx = direction.x() * velocityMagnitude;
+    float vy = direction.y() * velocityMagnitude;
+    float vz = direction.z() * velocityMagnitude;
+
+    int randomColor = 1 + (rand() % 255);
+
+    cameraPosition += direction * ((sceneCenter - cameraPosition).length()/5);
+    physicsManager.spawnSphere(cameraPosition.x(), cameraPosition.y(), cameraPosition.z(), size, vx, vy, vz, randomColor);
+}
+
+void VoxelWindow::spawnCubeFromCamera(float velocityMagnitude, unsigned size) {
+    float camX = sceneCenter.x() + distanceToModel;
+    float camZ = sceneCenter.z() + distanceToModel;
+    float camY = sceneCenter.y() + (distanceToModel * 0.3f);
+    QVector3D orbitCamPos(camX, camY, camZ);
+
+    QMatrix4x4 rotationMatrix;
+    rotationMatrix.translate(sceneCenter);
+    rotationMatrix.rotate(m_cameraRotation.y(), 0, 1, 0);
+    rotationMatrix.rotate(m_cameraRotation.x(), 1, 0, 0);
+    rotationMatrix.rotate(m_cameraRotation.z(), 0, 0, 1);
+    rotationMatrix.translate(-sceneCenter);
+
+    QVector3D cameraPosition = rotationMatrix.inverted().map(orbitCamPos);
+    QVector3D direction = (sceneCenter - cameraPosition).normalized();
+
+    float vx = direction.x() * velocityMagnitude;
+    float vy = direction.y() * velocityMagnitude;
+    float vz = direction.z() * velocityMagnitude;
+
+    int randomColor = 1 + (rand() % 255);
+
+    cameraPosition += direction * ((sceneCenter - cameraPosition).length()/5);
+    physicsManager.spawnCube(cameraPosition.x(), cameraPosition.y(), cameraPosition.z(), size, vx, vy, vz, randomColor);
 }

@@ -17,14 +17,12 @@ class VoxelWindow : public QOpenGLWindow, protected QOpenGLFunctions_4_5_Core
 {Q_OBJECT
 
 public:
-    // Конструктор и деструктор
     VoxelWindow(QWindow* parent = nullptr);
     ~VoxelWindow() override;
 
 
-    // Метод для установки пути к файлу (используется для загрузки)
     void setScenePath(const QString& path) { scenePath = path; }
-    void resetSimulation();
+
 
 
     void setFOV(float val);
@@ -36,8 +34,13 @@ public:
     void setCameraRotationY(float y);
     void setCameraRotationZ(float z);
 
+public Q_SLOTS:
+    void setPaused(bool p);
+    void spawnSphereFromCamera(float velocityMagnitude, unsigned size);
+    void spawnCubeFromCamera(float velocityMagnitude, unsigned size);
+    void resetSimulation();
+
 protected:
-    // Переопределение методов QOpenGLWindow
     void initializeGL() override;
     void resizeGL(int w, int h) override;
     void paintGL() override;
@@ -48,14 +51,12 @@ private:
     void calculateCenterOfModel();
     void initShadowFBO();
 
-    // Графические объекты
-    QOpenGLShaderProgram program;       // Основной шейдер (свет + цвет)
-    QOpenGLShaderProgram shadowProgram; // Теневой шейдер (только глубина)
+    QOpenGLShaderProgram program;
+    QOpenGLShaderProgram shadowProgram;
 
-    // Shadow Mapping ресурсы
     GLuint depthMapFBO = 0;
     GLuint depthMapTexture = 0;
-    const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048; // Разрешение тени
+    const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
     float lightBoxScale;
 
     QOpenGLBuffer vbo;
@@ -64,12 +65,9 @@ private:
 
     QTimer* timer = nullptr;
 
-    // Данные сцены
     std::vector<RenderVoxel> hostCudaVoxels;
-    int voxelCount = 0;
     QString scenePath;
 
-    // Параметры
     QVector3D sceneCenter;
     float distanceToModel;
     float m_fov;
@@ -77,6 +75,7 @@ private:
     QVector3D m_cameraRotation;
 
 
-    // физика
+
     PhysicsManager physicsManager;
+    void onPhysicsMemoryResize(unsigned int newMaxVoxels, unsigned int activeVoxels);
 };

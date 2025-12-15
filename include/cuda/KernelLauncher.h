@@ -24,15 +24,25 @@ void launch_initClusterState(
     unsigned int numVoxels
     );
 
+void launch_initSingleClusterState(
+    const float* posX, const float* posY, const float* posZ,
+    const float* mass,
+    const int* clusterID,
+    float* restOffsetX, float* restOffsetY, float* restOffsetZ,
+    double3* clusterCM, float* clusterMass,
+    int targetClusterID,
+    unsigned int begin, unsigned int count
+    );
+
 void launch_shapeMatchingStep(
     float* posX, float* posY, float* posZ,
     const float* mass,
     int* clusterID,
     float* restOffsetX, float* restOffsetY, float* restOffsetZ,
-    double3* clusterCM, float* clusterMass, float* clusterMatrixA, float* clusterRot,
+    double3* clusterCM, float* clusterMass, double* clusterMatrixA, float* clusterRot,
     unsigned int numVoxels,
     unsigned int maxClusters,
-    float stiffness
+    float stiffness, float rotStiffness, float breakLimit
     );
 
 void launch_initSoAFromGL(
@@ -91,13 +101,13 @@ void launch_solveCollisionsPBD(
     float* posX, float* posY, float* posZ,
     float* oldX, float* oldY, float* oldZ,
     float* mass, float* friction, int* clusterID,
+    float* clusterMass,
     unsigned int numVoxels,
     unsigned int* d_cellStart,
     unsigned int* d_cellEnd,
     unsigned int gridSize,
     float cellSize,
-    float dt
-    );
+    float dt);
 
 void launch_updateVelocities(
     float* posX, float* posY, float* posZ,

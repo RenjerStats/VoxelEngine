@@ -14,18 +14,10 @@ __global__ void copyToGLKernel(
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= numVoxels) return;
 
-    float x = d_posX[i];
-    float y = d_posY[i];
-    float z = d_posZ[i];
-    unsigned int c = d_colorID[i];
-
-    RenderVoxel v;
-    v.x = x;
-    v.y = y;
-    v.z = z;
-    v.colorID = c;
-
-    d_out[i] = v;
+    d_out[i].x = d_posX[i];
+    d_out[i].y = d_posY[i];
+    d_out[i].z = d_posZ[i];
+    d_out[i].colorID = (float)d_colorID[i];
 }
 
 extern "C" {

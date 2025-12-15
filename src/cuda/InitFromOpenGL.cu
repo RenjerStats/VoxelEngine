@@ -31,11 +31,11 @@ __global__ void initSoAFromGLKernel(
 
     if (colorID[i] == 255){ // зарезервированный цвет для неподвижных вокселей
         mass[i] = 0;
-        friction[i] = 0.5;
+        friction[i] = 0.9;
     }
     else{
         mass[i] = 1;
-        friction[i] = 0.3;
+        friction[i] = 0.5;
     }
 }
 

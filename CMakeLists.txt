@@ -25,6 +25,7 @@ set(HEADERS
     include/io/ogt_vox.h
     # Physics
     include/physics/PhysicsManager.h
+    include/physics/PhysicsHelper.h
     # CUDA
     include/cuda/KernelLauncher.h
     include/cuda/CudaInitializer.h

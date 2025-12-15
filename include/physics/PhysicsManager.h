@@ -1,15 +1,18 @@
 #pragma once
 
 #include <vector>
+#include <functional>
 #include "core/Types.h"
 
 struct cudaGraphicsResource;
 class SpatialHash;
 class ClusterManager;
 
+using VoxelCallback = std::function<void(unsigned int, unsigned int)>;
+
 class PhysicsManager {
 public:
-    PhysicsManager();
+    PhysicsManager(){};
     PhysicsManager(unsigned int frameRate, unsigned int countVoxels);
     ~PhysicsManager();
 
@@ -17,23 +20,51 @@ public:
     PhysicsManager(PhysicsManager&& other) noexcept;
     PhysicsManager& operator=(PhysicsManager&& other) noexcept;
 
-    void uploadVoxelsToGPU(const std::vector<RenderVoxel>& voxels); // только для отладки
-    void connectToOpenGL(unsigned int vboID);
+    PhysicsManager(const PhysicsManager&) = delete;
+    PhysicsManager& operator=(const PhysicsManager&) = delete;
+
+    void uploadVoxelsToGPU(const std::vector<RenderVoxel>& voxels, unsigned int _maxVoxels); // только для отладки
+    void connectToOpenGL(unsigned int vboID, unsigned int _activeVoxels);
+
+    void spawnSphere(float x, float y, float z, float radius, float vx, float vy, float vz, int colorID);
+    void spawnCube(float x, float y, float z, int size, float vx, float vy, float vz, int colorID);
+
     void updatePhysics(float speedSimulation, float stability);
 
     void freeResources();
 
-    void sortVoxels();
+    void setVoxelCallback(VoxelCallback callback) {
+        voxelCallback = callback;
+    }
+
+    void updateGLResource(unsigned int newVboID);
+    unsigned int getActiveVoxels() const { return activeVoxels; }
+
 
 private:
+    void sortVoxels();
     void initClusters();
+    void resizeMemory();
+    void initMemory();
+    void addNewVoxels(float vz, size_t count, std::vector<RenderVoxel> newVoxels, float vy, float vx, float startY, float startX, float startZ);
+    void resizeOpenGLBuffer();
+    void spawnVoxels(const std::vector<RenderVoxel>& newVoxels,
+                             float offsetX, float offsetY, float offsetZ,
+                             float velX, float velY, float velZ,
+                             unsigned int colorID);
+
     cudaGraphicsResource* openGLConnector = nullptr;
     unsigned int frameRate = 60;
-    unsigned int countVoxels = 0;
     SpatialHash* m_spatialHash = nullptr;
     ClusterManager* m_clusterManager = nullptr;
+    int maxClusterID = -1;
 
-    // Каноничное хранение физики: SoA
+    VoxelCallback voxelCallback;
+
+    unsigned int maxVoxels = 1000000;
+    unsigned int activeVoxels = 0;
+
+
     float* d_posX    = nullptr;
     float* d_posY    = nullptr;
     float* d_posZ    = nullptr;
@@ -51,7 +82,6 @@ private:
 
     unsigned int* d_colorID = nullptr;
 
-    // Каноничное хранение физики: SoA
     float* d_sortedPosX = nullptr;
     float* d_sortedPosY = nullptr;
     float* d_sortedPosZ = nullptr;
@@ -67,4 +97,5 @@ private:
     float* d_sortedMass     = nullptr;
     float* d_sortedFriction = nullptr;
     unsigned int* d_sortedColorID = nullptr;
+    void sendVoxelToOpenGL();
 };

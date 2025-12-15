@@ -8,6 +8,7 @@ __device__ inline float3 operator+(const float3& a, const float3& b) { return ma
 __device__ inline float3 operator-(const float3& a, const float3& b) { return make_float3(a.x - b.x, a.y - b.y, a.z - b.z); }
 __device__ inline float3 operator*(const float3& a, float b) { return make_float3(a.x * b, a.y * b, a.z * b); }
 __device__ inline float3 operator/(const float3& a, float b) { return make_float3(a.x / b, a.y / b, a.z / b); }
+
 __device__ inline float dot(const float3& a, const float3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 __device__ inline float length(const float3& a) { return sqrtf(dot(a, a)); }
 
@@ -98,6 +99,7 @@ __global__ void solveCollisionsPBDKernel(
     float* __restrict__ posX, float* __restrict__ posY, float* __restrict__ posZ,
     const float* __restrict__ oldX, const float* __restrict__ oldY, const float* __restrict__ oldZ,
     const float* __restrict__ mass, const float* __restrict__ friction, const int* clusterID,
+    const float* clusterMass,
     unsigned int numVoxels,
     const unsigned int* __restrict__ cellStart,
     const unsigned int* __restrict__ cellEnd,
@@ -234,9 +236,14 @@ __global__ void solveCollisionsPBDKernel(
         float omega = 1.2f;
         float factor = omega / (float)constraintCount;
 
-        pos.x += totalDelta.x * factor;
-        pos.y += totalDelta.y * factor;
-        pos.z += totalDelta.z * factor;
+        float3 correction;
+        correction.x = totalDelta.x * factor;
+        correction.y = totalDelta.y * factor;
+        correction.z = totalDelta.z * factor;
+
+        pos.x += correction.x;
+        pos.y += correction.y;
+        pos.z += correction.z;
 
         if (constraintCount > 1) { // засыпание вокселя при наличии 2 и более соседей для избежания желейности системы
             float diff = length(pos - originalPos);
@@ -289,7 +296,7 @@ __global__ void updateVelocitiesKernel(
 
     float vy_prev = velY[idx];
     if (newVel.y * vy_prev < -EPSILON){ // костыль для избежания эффекта катапульты при падении столбиков вокселей на пол
-        newVel.y *= 0.0f;
+        newVel.y *= 0.0;
     }
 
     newVel = newVel * damping;
@@ -326,13 +333,14 @@ void launch_solveCollisionsPBD(
     float* posX, float* posY, float* posZ,
     float* oldX, float* oldY, float* oldZ,
     float* mass, float* friction, int* clusterID,
+    float* clusterMass,
     unsigned int numVoxels,
     unsigned int* d_cellStart,
     unsigned int* d_cellEnd,
     unsigned int gridSize,
     float cellSize,
-    float dt)
-{
+    float dt) {
+
     int threads = 256;
     int blocks = (numVoxels + threads - 1) / threads;
 
@@ -340,11 +348,10 @@ void launch_solveCollisionsPBD(
         posX, posY, posZ,
         oldX, oldY, oldZ,
         mass, friction, clusterID,
+        clusterMass,
         numVoxels,
         d_cellStart, d_cellEnd,
-        gridSize, cellSize, dt
-        );
-
+        gridSize, cellSize, dt);
 }
 
 void launch_updateVelocities(
