@@ -148,9 +148,11 @@ void PhysicsManager::initMemory()
     m_spatialHash->initMemory(maxVoxels);
 }
 
-void PhysicsManager::resizeMemory() {
+void PhysicsManager::resizeMemory(int countNewVoxels) {
 
-    maxVoxels = maxVoxels * 2;
+    while (activeVoxels + countNewVoxels > maxVoxels){
+        maxVoxels = maxVoxels * 2;
+    }
 
     float *old_posX = d_posX, *old_posY = d_posY, *old_posZ = d_posZ;
     float *old_oldX = d_oldX, *old_oldY = d_oldY, *old_oldZ = d_oldZ;
@@ -364,7 +366,6 @@ void PhysicsManager::uploadVoxelsToGPU(const std::vector<RenderVoxel>& voxels, u
 
     initMemory();
 
-    // Временные host-массивы под SoA
     std::vector<float> h_posX(activeVoxels), h_posY(activeVoxels), h_posZ(activeVoxels);
     std::vector<float> h_oldX(activeVoxels), h_oldY(activeVoxels), h_oldZ(activeVoxels);
     std::vector<float> h_velX(activeVoxels), h_velY(activeVoxels), h_velZ(activeVoxels);
@@ -460,11 +461,9 @@ void PhysicsManager::initClusters(){
         if (id >= 0) roots.insert(id);
     }
 
-    int maxId = -1;
-    for (int id : h_clusterID) maxId = std::max(maxId, id);
-    maxClusterID = maxId;
+    maxClusterID = activeVoxels;
 
-    qDebug() << "clusters (unique roots) =" << static_cast<int>(roots.size());
+    qDebug() << "clusters =" << static_cast<int>(roots.size());
 }
 
 
@@ -525,7 +524,7 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability)
     float damping = 0.9999f;
     float shapeMatchingStiffness = 0.9f;
     float shapeMatchingRotateStiffness = 0.99f;
-    float breakLimit = 0.1;
+    float breakLimit = 0.5;
 
     for (unsigned int s = 0; s < substeps; ++s) {
 
@@ -567,7 +566,9 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability)
             m_clusterManager->getNumVoxels(),
             shapeMatchingStiffness,
             shapeMatchingRotateStiffness,
-            breakLimit);
+            breakLimit,
+            m_clusterManager->getClusterIsBraked()
+            );
 
         for (int i = 0; i < solverIterations; ++i) {
             launch_solveCollisionsPBD(
@@ -585,7 +586,6 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability)
         }
 
 
-        // 5. Velocity Update
         launch_updateVelocities(
             d_posX, d_posY, d_posZ,
             d_oldX, d_oldY, d_oldZ,
@@ -649,18 +649,19 @@ void PhysicsManager::spawnVoxels(const std::vector<RenderVoxel>& newVoxels,
     size_t count = newVoxels.size();
 
     while (activeVoxels + count > maxVoxels) {
-        resizeMemory();
+        resizeMemory(count);
         resizeOpenGLBuffer();
     }
 
     std::vector<float> h_posX(count), h_posY(count), h_posZ(count);
     std::vector<float> h_oldX(count), h_oldY(count), h_oldZ(count);
     std::vector<float> h_velX(count), h_velY(count), h_velZ(count);
-    std::vector<float> h_mass(count, 1.0f);
-    std::vector<float> h_friction(count, 0.5f);
+    std::vector<float> h_mass(count, 2.0f);
+    std::vector<float> h_friction(count, 0.7f);
     std::vector<int> h_clusterID(count);
 
-    int currentClusterID = ++maxClusterID;
+    int currentClusterID = maxClusterID;
+    maxClusterID += count;
 
     for (size_t i = 0; i < count; ++i) {
         h_posX[i] = offsetX + newVoxels[i].x;
@@ -675,7 +676,7 @@ void PhysicsManager::spawnVoxels(const std::vector<RenderVoxel>& newVoxels,
         h_velY[i] = velY;
         h_velZ[i] = velZ;
 
-        h_clusterID[i] = maxClusterID;
+        h_clusterID[i] = currentClusterID;
     }
 
     size_t offset = activeVoxels;

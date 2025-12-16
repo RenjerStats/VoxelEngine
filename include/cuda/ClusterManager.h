@@ -16,23 +16,21 @@ public:
 
         if (m_numVoxels == 0) return;
 
-        // --- Основные данные ---
         cudaMalloc((void**)&d_voxelClusterID, m_numVoxels * sizeof(int));
         cudaMalloc((void**)&d_restOffsetX, m_numVoxels * sizeof(float));
         cudaMalloc((void**)&d_restOffsetY, m_numVoxels * sizeof(float));
         cudaMalloc((void**)&d_restOffsetZ, m_numVoxels * sizeof(float));
 
-        // --- Sorted Буферы (для перестановки каждый кадр) ---
         cudaMalloc((void**)&d_sortedVoxelClusterID, m_numVoxels * sizeof(int));
         cudaMalloc((void**)&d_sortedRestOffsetX, m_numVoxels * sizeof(float));
         cudaMalloc((void**)&d_sortedRestOffsetY, m_numVoxels * sizeof(float));
         cudaMalloc((void**)&d_sortedRestOffsetZ, m_numVoxels * sizeof(float));
 
-        // --- Данные кластеров (не сортируются, индексируются по ID) ---
         cudaMalloc((void**)&d_clusterCM, m_numVoxels * sizeof(double3));
         cudaMalloc((void**)&d_clusterRot, m_numVoxels * 9 * sizeof(float));
         cudaMalloc((void**)&d_clusterMatrixA, m_numVoxels * 9 * sizeof(double));
         cudaMalloc((void**)&d_clusterMass, m_numVoxels * sizeof(float));
+        cudaMalloc((void**)&d_clusterIsBraked, m_numVoxels * sizeof(int));
     }
 
     void resizeMemory(unsigned int newNumVoxels) {
@@ -53,10 +51,10 @@ public:
         float* old_clusterRot = d_clusterRot;
         double* old_clusterMatrixA = d_clusterMatrixA;
         float* old_clusterMass = d_clusterMass;
+        int* old_clusterIsBraked = d_clusterIsBraked;
 
         m_numVoxels = newNumVoxels;
 
-        // Allocate new memory
         cudaMalloc((void**)&d_voxelClusterID, m_numVoxels * sizeof(int));
         cudaMalloc((void**)&d_restOffsetX, m_numVoxels * sizeof(float));
         cudaMalloc((void**)&d_restOffsetY, m_numVoxels * sizeof(float));
@@ -72,7 +70,8 @@ public:
         cudaMalloc((void**)&d_clusterMatrixA, m_numVoxels * 9 * sizeof(double));
         cudaMalloc((void**)&d_clusterMass, m_numVoxels * sizeof(float));
 
-        // Copy old data
+        cudaMalloc((void**)&d_clusterIsBraked, m_numVoxels * sizeof(int));
+
         if (oldNumVoxels > 0) {
             cudaMemcpy(d_voxelClusterID, old_voxelClusterID,
                        oldNumVoxels * sizeof(int), cudaMemcpyDeviceToDevice);
@@ -100,9 +99,11 @@ public:
                        oldNumVoxels * 9 * sizeof(double), cudaMemcpyDeviceToDevice);
             cudaMemcpy(d_clusterMass, old_clusterMass,
                        oldNumVoxels * sizeof(float), cudaMemcpyDeviceToDevice);
+
+            cudaMemcpy(d_clusterIsBraked, old_clusterIsBraked,
+                       oldNumVoxels * sizeof(int), cudaMemcpyDeviceToDevice);
         }
 
-        // Free old memory
         cudaFree(old_voxelClusterID);
         cudaFree(old_restOffsetX);
         cudaFree(old_restOffsetY);
@@ -115,6 +116,7 @@ public:
         cudaFree(old_clusterRot);
         cudaFree(old_clusterMatrixA);
         cudaFree(old_clusterMass);
+        cudaFree(old_clusterIsBraked);
     }
 
     void freeResources() {
@@ -133,6 +135,8 @@ public:
         if (d_clusterMatrixA) cudaFree(d_clusterMatrixA);
         if (d_clusterMass) cudaFree(d_clusterMass);
 
+        if (d_clusterIsBraked) cudaFree(d_clusterIsBraked);
+
         d_voxelClusterID = nullptr; d_sortedVoxelClusterID = nullptr;
         d_restOffsetX = nullptr; d_sortedRestOffsetX = nullptr;
         d_restOffsetY = nullptr; d_sortedRestOffsetY = nullptr;
@@ -140,9 +144,9 @@ public:
 
         d_clusterCM = nullptr; d_clusterRot = nullptr;
         d_clusterMatrixA = nullptr; d_clusterMass = nullptr;
+        d_clusterIsBraked = nullptr;
     }
 
-    // Swap pointers method (для PhysicsManager)
     void swapSortedBuffers() {
         std::swap(d_voxelClusterID, d_sortedVoxelClusterID);
         std::swap(d_restOffsetX, d_sortedRestOffsetX);
@@ -150,7 +154,6 @@ public:
         std::swap(d_restOffsetZ, d_sortedRestOffsetZ);
     }
 
-    // Getters
     unsigned int getNumVoxels() const { return m_numVoxels; }
 
     int* getVoxelClusterID() const { return d_voxelClusterID; }
@@ -168,6 +171,7 @@ public:
     float* getClusterRot() const { return d_clusterRot; }
     double* getClusterMatrixA() const { return d_clusterMatrixA; }
     float* getClusterMass() const { return d_clusterMass; }
+    int* getClusterIsBraked() const { return d_clusterIsBraked; }
 
 
 private:
@@ -186,6 +190,7 @@ private:
     float* d_sortedRestOffsetZ = nullptr;
 
     double3* d_clusterCM = nullptr;
+    int* d_clusterIsBraked = nullptr;
     float* d_clusterRot = nullptr;
     double* d_clusterMatrixA = nullptr;
     float* d_clusterMass = nullptr;

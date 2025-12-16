@@ -37,7 +37,7 @@ set(HEADERS
     include/rendering/Camera.h
     include/rendering/ShaderProgram.h
     # UI
-    include/ui/MainWindow.h
+
     include/ui/VoxelWindow.h
     include/ui/ControlPanel.h
 )
@@ -59,7 +59,7 @@ set(SOURCES
     src/rendering/Camera.cpp
     src/rendering/ShaderProgram.cpp
     # UI
-    src/ui/MainWindow.cpp
+
     src/ui/VoxelWindow.cpp
     src/ui/ControlPanel.cpp
 )

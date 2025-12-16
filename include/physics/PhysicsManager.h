@@ -44,7 +44,7 @@ public:
 private:
     void sortVoxels();
     void initClusters();
-    void resizeMemory();
+    void resizeMemory(int countNewVoxels);
     void initMemory();
     void addNewVoxels(float vz, size_t count, std::vector<RenderVoxel> newVoxels, float vy, float vx, float startY, float startX, float startZ);
     void resizeOpenGLBuffer();

@@ -42,7 +42,8 @@ void launch_shapeMatchingStep(
     double3* clusterCM, float* clusterMass, double* clusterMatrixA, float* clusterRot,
     unsigned int numVoxels,
     unsigned int maxClusters,
-    float stiffness, float rotStiffness, float breakLimit
+    float stiffness, float rotStiffness, float breakLimit,
+    int* d_clusterIsBraked
     );
 
 void launch_initSoAFromGL(

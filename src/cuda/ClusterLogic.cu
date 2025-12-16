@@ -354,9 +354,8 @@ __global__ void applyShapeMatchingKernel(
     int* clusterID,
     const float* restOffsetX, const float* restOffsetY, const float* restOffsetZ,
     const double3* clusterCM, const float* clusterMass, const float* clusterRot,
-    unsigned int numVoxels,
-    float stiffness,
-    float breakLimit
+    unsigned int numVoxels, float stiffness, float breakLimit,
+    int* d_clusterIsBraked
     ) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= numVoxels) return;
@@ -385,11 +384,13 @@ __global__ void applyShapeMatchingKernel(
 
     float3 delta = goal - curr;
 
-    //float len = delta.x*delta.x + delta.y*delta.y + delta.z*delta.z;
-   // if (len > breakLimit) {
-    //    clusterID[idx] = -1;
-    //    return;
-   // }
+    float len = delta.x*delta.x + delta.y*delta.y + delta.z*delta.z;
+
+
+    if (len > breakLimit) {
+        atomicExch(&d_clusterIsBraked[cID], 1);
+        return;
+    }
 
 
     delta = clampDeltaLen(delta, kMaxDeltaSM);
@@ -398,6 +399,17 @@ __global__ void applyShapeMatchingKernel(
     posX[idx] = nextPos.x;
     posY[idx] = nextPos.y;
     posZ[idx] = nextPos.z;
+}
+
+__global__ void detachBrakedClustersKernel(int* clusterID, const int* braked, float* posY, unsigned int numVoxels) {
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= numVoxels) return;
+    int c = clusterID[i];
+    if (c < 0) return;
+    if (braked[c]){
+        posY[i] -= 0.001; // добавляем немного гравитации, чтобы воксели отлипли друг от друга
+        clusterID[i] = -1;
+    }
 }
 
 // --- LAUNCHERS ---
@@ -442,7 +454,8 @@ void launch_shapeMatchingStep(
     double3* clusterCM, float* clusterMass, double* clusterMatrixA, float* clusterRot,
     unsigned int numVoxels,
     unsigned int maxClusters,
-    float stiffness, float rotStiffness, float breakLimit
+    float stiffness, float rotStiffness, float breakLimit,
+    int* d_clusterIsBraked
     ) {
     int threads = 256;
     int blocksVoxels = (numVoxels + threads - 1) / threads;
@@ -472,7 +485,12 @@ void launch_shapeMatchingStep(
         posX, posY, posZ, clusterID,
         restOffsetX, restOffsetY, restOffsetZ,
         clusterCM, clusterMass, clusterRot,
-        numVoxels, stiffness,  breakLimit
+        numVoxels, stiffness,  breakLimit,
+        d_clusterIsBraked
+        );
+
+    detachBrakedClustersKernel<<<blocksVoxels, threads>>>(
+        clusterID, d_clusterIsBraked, posY, numVoxels
         );
 }
 }

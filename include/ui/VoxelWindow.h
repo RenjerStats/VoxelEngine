@@ -24,7 +24,6 @@ public:
     void setScenePath(const QString& path) { scenePath = path; }
 
 
-
     void setFOV(float val);
     void setDistance(float val);
     void setLightDirX(float z);
