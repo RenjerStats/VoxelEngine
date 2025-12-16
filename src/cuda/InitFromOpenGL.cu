@@ -35,7 +35,7 @@ __global__ void initSoAFromGLKernel(
     }
     else{
         mass[i] = 1;
-        friction[i] = 0.5;
+        friction[i] = 0.1;
     }
 }
 

@@ -656,11 +656,11 @@ void PhysicsManager::spawnVoxels(const std::vector<RenderVoxel>& newVoxels,
     std::vector<float> h_posX(count), h_posY(count), h_posZ(count);
     std::vector<float> h_oldX(count), h_oldY(count), h_oldZ(count);
     std::vector<float> h_velX(count), h_velY(count), h_velZ(count);
-    std::vector<float> h_mass(count, 2.0f);
+    std::vector<float> h_mass(count, 1.0f);
     std::vector<float> h_friction(count, 0.7f);
     std::vector<int> h_clusterID(count);
 
-    int currentClusterID = maxClusterID;
+    int currentClusterID = ++maxClusterID;
     maxClusterID += count;
 
     for (size_t i = 0; i < count; ++i) {

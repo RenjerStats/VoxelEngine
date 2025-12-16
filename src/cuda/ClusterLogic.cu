@@ -401,13 +401,12 @@ __global__ void applyShapeMatchingKernel(
     posZ[idx] = nextPos.z;
 }
 
-__global__ void detachBrakedClustersKernel(int* clusterID, const int* braked, float* posY, unsigned int numVoxels) {
+__global__ void detachBrakedClustersKernel(int* clusterID, const int* braked, unsigned int numVoxels) {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= numVoxels) return;
     int c = clusterID[i];
     if (c < 0) return;
     if (braked[c]){
-        posY[i] -= 0.001; // добавляем немного гравитации, чтобы воксели отлипли друг от друга
         clusterID[i] = -1;
     }
 }
@@ -490,7 +489,7 @@ void launch_shapeMatchingStep(
         );
 
     detachBrakedClustersKernel<<<blocksVoxels, threads>>>(
-        clusterID, d_clusterIsBraked, posY, numVoxels
+        clusterID, d_clusterIsBraked, numVoxels
         );
 }
 }

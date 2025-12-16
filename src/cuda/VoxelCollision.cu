@@ -245,13 +245,6 @@ __global__ void solveCollisionsPBDKernel(
         pos.y += correction.y;
         pos.z += correction.z;
 
-        if (constraintCount > 1) { // засыпание вокселя при наличии 2 и более соседей для избежания желейности системы
-            float diff = length(pos - originalPos);
-            if (diff < 0.001f) {
-                pos = originalPos;
-            }
-        }
-
         posX[idx] = pos.x;
         posY[idx] = pos.y;
         posZ[idx] = pos.z;

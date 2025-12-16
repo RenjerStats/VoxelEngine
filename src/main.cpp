@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
     layout->addWidget(container, 1);
     layout->addWidget(controlPanel, 0);
 
-    voxelWindow->setScenePath("assets/test6.vox");
+    voxelWindow->setScenePath("assets/monu2.vox");
 
     mainWindow->show();
 

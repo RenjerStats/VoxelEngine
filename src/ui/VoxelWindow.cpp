@@ -2,6 +2,7 @@
 #include "io/VoxFileParser.h"
 #include "io/VoxScene.h"
 #include "core/Types.h"
+#include "ui/MouseInputHandler.h"
 
 #include <QDebug>
 #include <QtMath>
@@ -9,14 +10,15 @@
 using namespace VoxIO;
 using namespace std;
 
+
 VoxelWindow::VoxelWindow(QWindow* parent)
-    : QOpenGLWindow(NoPartialUpdate, parent)
-    , m_fov(45.0f)
-    , m_lightDir(0.5f, 1.0f, 0.3f)
-    , m_cameraRotation(180, -45, 180)
-    , distanceToModel(100)
-    , sceneCenter(0.0f, 0.0f, 0.0f)
-    , lightBoxScale(100)
+    : QOpenGLWindow(NoPartialUpdate, parent),
+    fov(45.0f),
+    lightDir(0.5f, 1.0f, 0.3f),
+    cameraRotation(0.0f, 0.0f, 0.0f),
+    distanceToModel(100),
+    sceneCenter(0.0f, 0.0f, 0.0f),
+    lightBoxScale(100)
 {
     QSurfaceFormat format;
     format.setVersion(4, 5);
@@ -97,7 +99,21 @@ void VoxelWindow::initializeGL() {
         scenePath.clear();
     }
 
+    inputHandler = new MouseInputHandler(this);
+
     qDebug() << "VoxelWindow Initialized. GPU:" << (const char*)glGetString(GL_RENDERER);
+}
+
+void VoxelWindow::mousePressEvent(QMouseEvent* event) {
+    inputHandler->mousePressEvent(event);
+}
+
+void VoxelWindow::mouseMoveEvent(QMouseEvent* event) {
+    inputHandler->mouseMoveEvent(event);
+}
+
+void VoxelWindow::mouseReleaseEvent(QMouseEvent* event) {
+    inputHandler->mouseReleaseEvent(event);
 }
 
 void VoxelWindow::setPaused(bool paused) {
@@ -267,14 +283,14 @@ void VoxelWindow::resetSimulation(){
 
 void VoxelWindow::resizeGL(int w, int h) {}
 
-void VoxelWindow::setFOV(float val) { m_fov = val; }
+void VoxelWindow::setFOV(float val) { fov = val; }
 void VoxelWindow::setDistance(float val) { distanceToModel = val; }
-void VoxelWindow::setLightDirX(float x) { m_lightDir.setX(x); }
-void VoxelWindow::setLightDirY(float y) { m_lightDir.setY(y); }
-void VoxelWindow::setLightDirZ(float z) { m_lightDir.setZ(z); }
-void VoxelWindow::setCameraRotationX(float x) { m_cameraRotation.setX(x); }
-void VoxelWindow::setCameraRotationY(float y) { m_cameraRotation.setY(y); }
-void VoxelWindow::setCameraRotationZ(float z) { m_cameraRotation.setZ(z); }
+void VoxelWindow::setLightDirX(float x) { lightDir.setX(x); }
+void VoxelWindow::setLightDirY(float y) { lightDir.setY(y); }
+void VoxelWindow::setLightDirZ(float z) { lightDir.setZ(z); }
+void VoxelWindow::setCameraRotationX(float x) { cameraRotation.setX(x); }
+void VoxelWindow::setCameraRotationY(float y) { cameraRotation.setY(y); }
+void VoxelWindow::setCameraRotationZ(float z) { cameraRotation.setZ(z); }
 
 void VoxelWindow::paintGL() {
     physicsManager.updatePhysics(1, 1);
@@ -292,14 +308,12 @@ void VoxelWindow::paintGL() {
     lightProjection.ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 1.0f, lightBoxScale * 3.0f);
 
 
-    QVector3D lightPos = sceneCenter + (m_lightDir.normalized() * distanceToModel * 1.5f);
+    QVector3D lightPos = sceneCenter + (lightDir.normalized() * distanceToModel * 1.5f);
 
     QMatrix4x4 lightView;
     lightView.lookAt(lightPos, sceneCenter, QVector3D(0, 1, 0));
 
     QMatrix4x4 lightSpaceMatrix = lightProjection * lightView;
-
-
 
     glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
     glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
@@ -328,24 +342,21 @@ void VoxelWindow::paintGL() {
     QMatrix4x4 view, proj;
     float nearPlane = 0.1f;
     float farPlane = 5000.0f;
-    proj.perspective(m_fov, (float)width() / height(), nearPlane, farPlane);
+    proj.perspective(fov, (float)width() / height(), nearPlane, farPlane);
 
-    float camX = sceneCenter.x() + distanceToModel;
-    float camZ = sceneCenter.z() + distanceToModel;
-    float camY = sceneCenter.y() + (distanceToModel * 0.3f);
-    QVector3D orbitCamPos(camX, camY, camZ);
+    float yaw = qDegreesToRadians(cameraRotation.y());
+    float pitch = qDegreesToRadians(cameraRotation.x());
+    float camX = distanceToModel * cos(pitch) * sin(yaw);
+    float camY = distanceToModel * sin(pitch);
+    float camZ = distanceToModel * cos(pitch) * cos(yaw);
+    QVector3D orbitCamPos = sceneCenter + QVector3D(camX, camY, camZ);
 
     view.lookAt(orbitCamPos, sceneCenter, QVector3D(0, 1, 0));
-    view.translate(sceneCenter);
-    view.rotate(m_cameraRotation.y(), 0, 1, 0);
-    view.rotate(m_cameraRotation.x(), 1, 0, 0);
-    view.rotate(m_cameraRotation.z(), 0, 0, 1);
-    view.translate(-sceneCenter);
 
     program.setUniformValue("proj", proj);
     program.setUniformValue("view", view);
     program.setUniformValue("voxelSize", 1.0f);
-    program.setUniformValue("lightDir", m_lightDir);
+    program.setUniformValue("lightDir", lightDir);
     program.setUniformValue("viewPos", orbitCamPos);
     program.setUniformValue("shininess", 32.0f);
 
@@ -370,20 +381,17 @@ void VoxelWindow::paintGL() {
 }
 
 void VoxelWindow::spawnSphereFromCamera(float velocityMagnitude, unsigned size) {
-    float camX = sceneCenter.x() + distanceToModel;
-    float camZ = sceneCenter.z() + distanceToModel;
-    float camY = sceneCenter.y() + (distanceToModel * 0.3f);
-    QVector3D orbitCamPos(camX, camY, camZ);
+    float yaw = qDegreesToRadians(cameraRotation.y());
+    float pitch = qDegreesToRadians(cameraRotation.x());
 
-    QMatrix4x4 rotationMatrix;
-    rotationMatrix.translate(sceneCenter);
-    rotationMatrix.rotate(m_cameraRotation.y(), 0, 1, 0);
-    rotationMatrix.rotate(m_cameraRotation.x(), 1, 0, 0);
-    rotationMatrix.rotate(m_cameraRotation.z(), 0, 0, 1);
-    rotationMatrix.translate(-sceneCenter);
+    float camX = distanceToModel * cos(pitch) * sin(yaw);
+    float camY = distanceToModel * sin(pitch);
+    float camZ = distanceToModel * cos(pitch) * cos(yaw);
 
-    QVector3D cameraPosition =  rotationMatrix.inverted().map(orbitCamPos);
+    QVector3D cameraPosition = sceneCenter + QVector3D(camX, camY, camZ);
+
     QVector3D direction = (sceneCenter - cameraPosition).normalized();
+
 
     float vx = direction.x() * velocityMagnitude;
     float vy = direction.y() * velocityMagnitude;
@@ -391,8 +399,8 @@ void VoxelWindow::spawnSphereFromCamera(float velocityMagnitude, unsigned size) 
 
     int randomColor = 1 + (rand() % 255);
 
-    cameraPosition += direction * ((sceneCenter - cameraPosition).length()/5);
-    physicsManager.spawnSphere(cameraPosition.x(), cameraPosition.y(), cameraPosition.z(), size, vx, vy, vz, randomColor);
+    QVector3D spawnPos = cameraPosition + direction * (distanceToModel * 0.2f);
+    physicsManager.spawnSphere(spawnPos.x(), spawnPos.y(), spawnPos.z(), size, vx, vy, vz, randomColor);
 }
 
 void VoxelWindow::spawnCubeFromCamera(float velocityMagnitude, unsigned size) {
@@ -403,9 +411,9 @@ void VoxelWindow::spawnCubeFromCamera(float velocityMagnitude, unsigned size) {
 
     QMatrix4x4 rotationMatrix;
     rotationMatrix.translate(sceneCenter);
-    rotationMatrix.rotate(m_cameraRotation.y(), 0, 1, 0);
-    rotationMatrix.rotate(m_cameraRotation.x(), 1, 0, 0);
-    rotationMatrix.rotate(m_cameraRotation.z(), 0, 0, 1);
+    rotationMatrix.rotate(cameraRotation.y(), 0, 1, 0);
+    rotationMatrix.rotate(cameraRotation.x(), 1, 0, 0);
+    rotationMatrix.rotate(cameraRotation.z(), 0, 0, 1);
     rotationMatrix.translate(-sceneCenter);
 
     QVector3D cameraPosition = rotationMatrix.inverted().map(orbitCamPos);

@@ -12,6 +12,7 @@
 #include <vector>
 
 struct RenderVoxel;
+class MouseInputHandler;
 
 class VoxelWindow : public QOpenGLWindow, protected QOpenGLFunctions_4_5_Core
 {Q_OBJECT
@@ -44,6 +45,9 @@ protected:
     void resizeGL(int w, int h) override;
     void paintGL() override;
     void loadScene();
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
 
 
 private:
@@ -69,11 +73,11 @@ private:
 
     QVector3D sceneCenter;
     float distanceToModel;
-    float m_fov;
-    QVector3D m_lightDir;
-    QVector3D m_cameraRotation;
+    float fov;
+    QVector3D lightDir;
+    QVector3D cameraRotation;
 
-
+    MouseInputHandler* inputHandler = nullptr;
 
     PhysicsManager physicsManager;
     void onPhysicsMemoryResize(unsigned int newMaxVoxels, unsigned int activeVoxels);

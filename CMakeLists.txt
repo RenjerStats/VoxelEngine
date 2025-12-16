@@ -37,14 +37,13 @@ set(HEADERS
     include/rendering/Camera.h
     include/rendering/ShaderProgram.h
     # UI
-
+    include/ui/MouseInputHandler.h
     include/ui/VoxelWindow.h
     include/ui/ControlPanel.h
 )
 
 set(SOURCES
     src/main.cpp
-
     # Core
     src/core/Types.cpp
     src/core/Logger.cpp
@@ -59,7 +58,7 @@ set(SOURCES
     src/rendering/Camera.cpp
     src/rendering/ShaderProgram.cpp
     # UI
-
+    src/ui/MouseInputHandler.cpp
     src/ui/VoxelWindow.cpp
     src/ui/ControlPanel.cpp
 )
