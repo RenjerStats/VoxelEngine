@@ -22,19 +22,13 @@ __device__ __forceinline__ unsigned int morton3D(unsigned int x, unsigned int y,
 }
 
 __device__ int calcGridHash(int gridPos_x, int gridPos_y, int gridPos_z, int gridSize) {
-    // 1. Ограничиваем координаты "виртуальной сеткой" 256x256x256
-    // Важно: координаты должны быть положительными для Мортона.
-    // Если сцена центрирована в (0,0,0), лучше добавить offset перед кастом в unsigned.
-    // Здесь мы просто берем младшие биты (& 0xFF), что работает как быстрый modulo 256.
 
     unsigned int x = static_cast<unsigned int>(gridPos_x) & 0xFF;
     unsigned int y = static_cast<unsigned int>(gridPos_y) & 0xFF;
     unsigned int z = static_cast<unsigned int>(gridPos_z) & 0xFF;
 
-    // 2. Считаем Z-индекс
     unsigned int mCode = morton3D(x, y, z);
 
-    // 3. Ограничиваем размером хеш-таблицы
     return mCode & (gridSize - 1);
 }
 
@@ -76,11 +70,9 @@ __global__ void findCellBoundsKernel(unsigned int* gridParticleHash, unsigned in
 
     unsigned int hash = gridParticleHash[index];
 
-    // Начало ячейки: если это первый элемент или предыдущий имеет другой хеш
     if (index == 0 || hash != gridParticleHash[index - 1]) {
         cellStart[hash] = index;
     }
-    // Конец ячейки: если это последний элемент или следующий имеет другой хеш
     if (index == numVoxels - 1 || hash != gridParticleHash[index + 1]) {
         cellEnd[hash] = index + 1;
     }
@@ -104,7 +96,6 @@ void launch_buildSpatialHash(
     int blocksParticles = (numVoxels + threads - 1) / threads;
     int blocksGrid      = (gridSize + threads - 1) / threads;
 
-    // 1. Считаем хеши
     calcHashKernel<<<blocksParticles, threads>>>(
         d_gridParticleHash,
         d_gridParticleIndex,
@@ -116,18 +107,13 @@ void launch_buildSpatialHash(
         gridSize
         );
 
-    // 2. Сортируем (используем Thrust)
-    // Thrust сам разберется с указателями, device_ptr просто оборачивает сырой указатель
     thrust::device_ptr<unsigned int> t_hash(d_gridParticleHash);
     thrust::device_ptr<unsigned int> t_index(d_gridParticleIndex);
 
-    // Сортируем хеши и синхронно переставляем индексы частиц
     thrust::sort_by_key(t_hash, t_hash + numVoxels, t_index);
 
-    // 3. Очищаем таблицу ячеек
     resetCellBoundsKernel<<<blocksGrid, threads>>>(d_cellStart, d_cellEnd, gridSize);
 
-    // 4. Находим границы ячеек
     findCellBoundsKernel<<<blocksParticles, threads>>>(
         d_gridParticleHash, d_cellStart, d_cellEnd, numVoxels
         );

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "io/ogt_vox.h"
 #include "physics/PhysicsManager.h"
 
 #include <QOpenGLWindow>
@@ -12,7 +13,7 @@
 #include <vector>
 
 struct RenderVoxel;
-class MouseInputHandler;
+class InputHandler;
 
 class VoxelWindow : public QOpenGLWindow, protected QOpenGLFunctions_4_5_Core
 {Q_OBJECT
@@ -21,33 +22,36 @@ public:
     VoxelWindow(QWindow* parent = nullptr);
     ~VoxelWindow() override;
 
-
-    void setScenePath(const QString& path) { scenePath = path; }
-
-
     void setFOV(float val);
     void setDistance(float val);
-    void setLightDirX(float z);
+    void setHeight(float val);
+
+    void setLightDirX(float x);
     void setLightDirY(float y);
     void setLightDirZ(float z);
     void setCameraRotationX(float x);
     void setCameraRotationY(float y);
-    void setCameraRotationZ(float z);
+
+
+public: Q_SIGNALS:
+    void spawnRequested();
 
 public Q_SLOTS:
     void setPaused(bool p);
     void spawnSphereFromCamera(float velocityMagnitude, unsigned size);
     void spawnCubeFromCamera(float velocityMagnitude, unsigned size);
     void resetSimulation();
+    void loadScene(QString path);
+    void saveScene(QString path);
 
 protected:
     void initializeGL() override;
     void resizeGL(int w, int h) override;
     void paintGL() override;
-    void loadScene();
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 
 private:
@@ -69,16 +73,18 @@ private:
     QTimer* timer = nullptr;
 
     std::vector<RenderVoxel> hostCudaVoxels;
-    QString scenePath;
+    ogt_vox_palette voxPalette;
 
     QVector3D sceneCenter;
     float distanceToModel;
+    float cameraHeight;
     float fov;
     QVector3D lightDir;
     QVector3D cameraRotation;
 
-    MouseInputHandler* inputHandler = nullptr;
+    InputHandler* inputHandler = nullptr;
 
+    bool physicsPaused = false;
     PhysicsManager physicsManager;
     void onPhysicsMemoryResize(unsigned int newMaxVoxels, unsigned int activeVoxels);
 };

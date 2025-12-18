@@ -524,7 +524,7 @@ void PhysicsManager::updatePhysics(float speedSimulation, float stability)
     float damping = 0.9999f;
     float shapeMatchingStiffness = 0.9f;
     float shapeMatchingRotateStiffness = 0.99f;
-    float breakLimit = 0.5;
+    float breakLimit = 0.6;
 
     for (unsigned int s = 0; s < substeps; ++s) {
 
@@ -642,6 +642,8 @@ void PhysicsManager::spawnVoxels(const std::vector<RenderVoxel>& newVoxels,
                                          float offsetX, float offsetY, float offsetZ,
                                          float velX, float velY, float velZ,
                                          unsigned int colorID) {
+
+
     if (newVoxels.empty()) {
         return;
     }

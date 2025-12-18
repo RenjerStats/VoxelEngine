@@ -17,8 +17,6 @@ set(HEADERS
     include/Application.h
     # Core
     include/core/Types.h
-    include/core/Config.h
-    include/core/Logger.h
     # IO
     include/io/VoxFileParser.h
     include/io/VoxScene.h
@@ -31,13 +29,8 @@ set(HEADERS
     include/cuda/CudaInitializer.h
     include/cuda/SpatialHash.h
     include/cuda/ClusterManager.h
-    # Rendering
-    include/rendering/VoxelRenderer.h
-    include/rendering/GLCudaInterop.h
-    include/rendering/Camera.h
-    include/rendering/ShaderProgram.h
     # UI
-    include/ui/MouseInputHandler.h
+    include/ui/InputHandler.h
     include/ui/VoxelWindow.h
     include/ui/ControlPanel.h
 )
@@ -52,13 +45,8 @@ set(SOURCES
     src/io/VoxScene.cpp
     # Physics
     src/physics/PhysicsManager.cpp
-    # Rendering
-    src/rendering/VoxelRenderer.cpp
-    src/rendering/GLCudaInterop.cpp
-    src/rendering/Camera.cpp
-    src/rendering/ShaderProgram.cpp
     # UI
-    src/ui/MouseInputHandler.cpp
+    src/ui/InputHandler.cpp
     src/ui/VoxelWindow.cpp
     src/ui/ControlPanel.cpp
 )

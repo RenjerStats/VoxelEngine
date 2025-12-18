@@ -2,7 +2,7 @@
 #include "io/VoxFileParser.h"
 #include "io/VoxScene.h"
 #include "core/Types.h"
-#include "ui/MouseInputHandler.h"
+#include "ui/InputHandler.h"
 
 #include <QDebug>
 #include <QtMath>
@@ -18,7 +18,8 @@ VoxelWindow::VoxelWindow(QWindow* parent)
     cameraRotation(0.0f, 0.0f, 0.0f),
     distanceToModel(100),
     sceneCenter(0.0f, 0.0f, 0.0f),
-    lightBoxScale(100)
+    lightBoxScale(100),
+    cameraHeight(0)
 {
     QSurfaceFormat format;
     format.setVersion(4, 5);
@@ -94,63 +95,22 @@ void VoxelWindow::initializeGL() {
 
     initShadowFBO();
 
-    if (!scenePath.isEmpty()) {
-        loadScene();
-        scenePath.clear();
+    inputHandler = new InputHandler(this);
+
+    loadScene("assets/AncientTemple.vox");
+
+    qDebug() << "System Initialized. GPU:" << (const char*)glGetString(GL_RENDERER);
+}
+
+void VoxelWindow::loadScene(QString path){
+    qDebug() << "Loading scene from:" << path;
+    std::unique_ptr<VoxScene> scene;
+    try {
+        scene = VoxFileParser::load(path);
+    } catch (...) {
+        qWarning() << "Failed to load scene!";
     }
 
-    inputHandler = new MouseInputHandler(this);
-
-    qDebug() << "VoxelWindow Initialized. GPU:" << (const char*)glGetString(GL_RENDERER);
-}
-
-void VoxelWindow::mousePressEvent(QMouseEvent* event) {
-    inputHandler->mousePressEvent(event);
-}
-
-void VoxelWindow::mouseMoveEvent(QMouseEvent* event) {
-    inputHandler->mouseMoveEvent(event);
-}
-
-void VoxelWindow::mouseReleaseEvent(QMouseEvent* event) {
-    inputHandler->mouseReleaseEvent(event);
-}
-
-void VoxelWindow::setPaused(bool paused) {
-    if (paused) timer->stop();
-    else timer->start();
-}
-
-void VoxelWindow::initShadowFBO() {
-    glGenFramebuffers(1, &depthMapFBO);
-
-    glGenTextures(1, &depthMapTexture);
-    glBindTexture(GL_TEXTURE_2D, depthMapTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
-                 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMapTexture, 0);
-
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
-void VoxelWindow::loadScene() {
-    qDebug() << "Loading scene from:" << scenePath;
-
-    // 1. Парсинг .vox
-    auto scene = VoxFileParser::load(scenePath);
     if (!scene) {
         qWarning() << "Failed to load scene!";
         return;
@@ -159,6 +119,7 @@ void VoxelWindow::loadScene() {
     hostCudaVoxels.clear();
 
     const ogt_vox_palette& pal = scene->palette();
+    voxPalette = pal; // сохраняем для использования в save scene
     QImage palImage(256, 1, QImage::Format_RGBA8888);
     for (int i = 0; i < 256; ++i) {
         palImage.setPixelColor(i, 0, QColor(pal.color[i].r, pal.color[i].g, pal.color[i].b, pal.color[i].a));
@@ -205,6 +166,73 @@ void VoxelWindow::loadScene() {
     });
 
     requestUpdate();
+}
+
+void VoxelWindow::saveScene(QString path){
+    unsigned int voxelCount = physicsManager.getActiveVoxels();
+    std::vector<RenderVoxel> buffer;
+    buffer.clear();
+    buffer.resize(voxelCount);
+    vbo.bind();
+    vbo.read(0, buffer.data(), voxelCount * sizeof(RenderVoxel));
+    vbo.release();
+    try {
+        bool success = VoxFileParser::save(path, buffer, voxPalette);
+    } catch (...) {
+        qWarning() << "Failed to save scene!";
+    }
+}
+
+void VoxelWindow::mousePressEvent(QMouseEvent* event) {
+    inputHandler->mousePressEvent(event);
+}
+
+void VoxelWindow::mouseMoveEvent(QMouseEvent* event) {
+    inputHandler->mouseMoveEvent(event);
+}
+
+void VoxelWindow::mouseReleaseEvent(QMouseEvent* event) {
+    inputHandler->mouseReleaseEvent(event);
+}
+
+void VoxelWindow::keyPressEvent(QKeyEvent* event) {
+    if (!event) return;
+
+    if (event->key() == Qt::Key_Space) {
+        Q_EMIT spawnRequested();
+        event->accept();
+    } else {
+        QOpenGLWindow::keyPressEvent(event);
+    }
+}
+
+void VoxelWindow::setPaused(bool paused) {
+    physicsPaused = paused;
+}
+
+void VoxelWindow::initShadowFBO() {
+    glGenFramebuffers(1, &depthMapFBO);
+
+    glGenTextures(1, &depthMapTexture);
+    glBindTexture(GL_TEXTURE_2D, depthMapTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+                 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMapTexture, 0);
+
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void VoxelWindow::onPhysicsMemoryResize(unsigned int newMaxVoxels, unsigned int activeVoxels)
@@ -285,15 +313,15 @@ void VoxelWindow::resizeGL(int w, int h) {}
 
 void VoxelWindow::setFOV(float val) { fov = val; }
 void VoxelWindow::setDistance(float val) { distanceToModel = val; }
+void VoxelWindow::setHeight(float val) { cameraHeight = val; }
 void VoxelWindow::setLightDirX(float x) { lightDir.setX(x); }
 void VoxelWindow::setLightDirY(float y) { lightDir.setY(y); }
-void VoxelWindow::setLightDirZ(float z) { lightDir.setZ(z); }
+void VoxelWindow::setLightDirZ(float z) { lightDir.setZ(-z); }
 void VoxelWindow::setCameraRotationX(float x) { cameraRotation.setX(x); }
 void VoxelWindow::setCameraRotationY(float y) { cameraRotation.setY(y); }
-void VoxelWindow::setCameraRotationZ(float z) { cameraRotation.setZ(z); }
 
 void VoxelWindow::paintGL() {
-    physicsManager.updatePhysics(1, 1);
+    if (!physicsPaused) physicsManager.updatePhysics(1, 1);
 
     unsigned int voxelCount = physicsManager.getActiveVoxels();
     if (voxelCount == 0) {
@@ -349,9 +377,11 @@ void VoxelWindow::paintGL() {
     float camX = distanceToModel * cos(pitch) * sin(yaw);
     float camY = distanceToModel * sin(pitch);
     float camZ = distanceToModel * cos(pitch) * cos(yaw);
-    QVector3D orbitCamPos = sceneCenter + QVector3D(camX, camY, camZ);
 
-    view.lookAt(orbitCamPos, sceneCenter, QVector3D(0, 1, 0));
+    QVector3D thiftedCenter = sceneCenter + QVector3D(0, cameraHeight, 0);
+    QVector3D orbitCamPos = thiftedCenter + QVector3D(camX, camY, camZ);
+
+    view.lookAt(orbitCamPos, thiftedCenter, QVector3D(0, 1, 0));
 
     program.setUniformValue("proj", proj);
     program.setUniformValue("view", view);
@@ -388,9 +418,10 @@ void VoxelWindow::spawnSphereFromCamera(float velocityMagnitude, unsigned size) 
     float camY = distanceToModel * sin(pitch);
     float camZ = distanceToModel * cos(pitch) * cos(yaw);
 
-    QVector3D cameraPosition = sceneCenter + QVector3D(camX, camY, camZ);
+    QVector3D thiftedCenter = sceneCenter + QVector3D(0, cameraHeight, 0);
+    QVector3D cameraPosition = thiftedCenter + QVector3D(camX, camY, camZ);
 
-    QVector3D direction = (sceneCenter - cameraPosition).normalized();
+    QVector3D direction = (thiftedCenter - cameraPosition).normalized();
 
 
     float vx = direction.x() * velocityMagnitude;
@@ -404,20 +435,18 @@ void VoxelWindow::spawnSphereFromCamera(float velocityMagnitude, unsigned size) 
 }
 
 void VoxelWindow::spawnCubeFromCamera(float velocityMagnitude, unsigned size) {
-    float camX = sceneCenter.x() + distanceToModel;
-    float camZ = sceneCenter.z() + distanceToModel;
-    float camY = sceneCenter.y() + (distanceToModel * 0.3f);
-    QVector3D orbitCamPos(camX, camY, camZ);
+    float yaw = qDegreesToRadians(cameraRotation.y());
+    float pitch = qDegreesToRadians(cameraRotation.x());
 
-    QMatrix4x4 rotationMatrix;
-    rotationMatrix.translate(sceneCenter);
-    rotationMatrix.rotate(cameraRotation.y(), 0, 1, 0);
-    rotationMatrix.rotate(cameraRotation.x(), 1, 0, 0);
-    rotationMatrix.rotate(cameraRotation.z(), 0, 0, 1);
-    rotationMatrix.translate(-sceneCenter);
+    float camX = distanceToModel * cos(pitch) * sin(yaw);
+    float camY = distanceToModel * sin(pitch);
+    float camZ = distanceToModel * cos(pitch) * cos(yaw);
 
-    QVector3D cameraPosition = rotationMatrix.inverted().map(orbitCamPos);
-    QVector3D direction = (sceneCenter - cameraPosition).normalized();
+
+    QVector3D thiftedCenter = sceneCenter + QVector3D(0, cameraHeight, 0);
+    QVector3D cameraPosition = thiftedCenter + QVector3D(camX, camY, camZ);
+
+    QVector3D direction = (thiftedCenter - cameraPosition).normalized();
 
     float vx = direction.x() * velocityMagnitude;
     float vy = direction.y() * velocityMagnitude;
@@ -425,6 +454,6 @@ void VoxelWindow::spawnCubeFromCamera(float velocityMagnitude, unsigned size) {
 
     int randomColor = 1 + (rand() % 255);
 
-    cameraPosition += direction * ((sceneCenter - cameraPosition).length()/5);
-    physicsManager.spawnCube(cameraPosition.x(), cameraPosition.y(), cameraPosition.z(), size, vx, vy, vz, randomColor);
+    QVector3D spawnPos = cameraPosition + direction * (distanceToModel * 0.2f);
+    physicsManager.spawnCube(spawnPos.x(), spawnPos.y(), spawnPos.z(), size, vx, vy, vz, randomColor);
 }

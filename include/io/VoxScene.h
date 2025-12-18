@@ -6,8 +6,7 @@
 #include <functional>
 
 #include "ogt_vox.h"
-
-struct RenderVoxel;
+#include "core/Types.h"
 
 namespace VoxIO {
 

@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
     std::cout << ">>> NSIGHT COMPUTE DEBUG MODE ENABLED <<<" << std::endl;
     std::cout << ">>> NO GUI / NO OPENGL INTEROP <<<" << std::endl;
 
-    QString scenePath = "assets/test5.vox";
+    QString scenePath = "assets/test4.vox";
     std::cout << "Loading scene: " << scenePath.toStdString() << std::endl;
 
     auto scene = VoxFileParser::load(scenePath);
@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
 
     PhysicsManager physics(60, hostVoxels.size());
 
-    physics.uploadVoxelsToGPU(hostVoxels);
+    physics.uploadVoxelsToGPU(hostVoxels, hostVoxels.size());
 
     int totalFrames = 600;
     std::cout << "Starting simulation for " << totalFrames << " frames..." << std::endl;
@@ -80,8 +80,6 @@ int main(int argc, char *argv[])
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(container, 1);
     layout->addWidget(controlPanel, 0);
-
-    voxelWindow->setScenePath("assets/monu2.vox");
 
     mainWindow->show();
 

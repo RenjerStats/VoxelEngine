@@ -1,5 +1,4 @@
 #include "io/VoxScene.h"
-#include "core/Types.h"
 #include <QDebug>
 
 namespace VoxIO {
@@ -108,8 +107,13 @@ std::vector<RenderVoxel> VoxModel::getCudaVoxels() const
 
     float diffX = maxX-minX;
     float diffZ = maxZ-minZ;
-    for (int x = minX-(int)(diffX*0.4); x < maxX+(int)(diffX*0.4); ++x) {
-        for (int z = minZ-(int)(diffZ*0.4); z < maxZ+(int)(diffZ*0.4); ++z) {
+
+    float maxDiff = std::max(diffX, diffZ);
+    float minXZ = std::min(minX, minZ);
+    float maxXZ = std::max(maxX, maxZ);
+
+    for (int x = minXZ-(int)(maxDiff*0.4); x < maxXZ+(int)(maxDiff*0.4); ++x) {
+        for (int z = minXZ-(int)(maxDiff*0.4); z < maxXZ+(int)(maxDiff*0.4); ++z) {
             RenderVoxel cv;
             cv.x = (float)x;
             cv.y = -1;
